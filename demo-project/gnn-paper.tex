@@ -1,0 +1,170 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\title{A Gentle Introduction to Graph Neural Networks}
+\author{Jane Researcher \\ \texttt{jane@university.edu}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Graph Neural Networks (GNNs) have emerged as a powerful framework for learning on graph-structured data.
+This paper provides an accessible introduction to the core concepts behind GNNs, including message passing,
+graph convolutions, and common architectures. We derive the mathematical foundations and discuss
+practical considerations for implementation.
+\end{abstract}
+
+\section{Introduction}
+Graphs are ubiquitous in modern machine learning applications, from social network analysis to molecular
+property prediction. Unlike images or sequences, graphs have an irregular structure that does not lend
+itself to standard convolutional or recurrent architectures.
+
+A graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ consists of a set of nodes $\mathcal{V} = \{v_1, \ldots, v_N\}$
+and edges $\mathcal{E} \subseteq \mathcal{V} \times \mathcal{V}$. Each node $v_i$ may have an associated
+feature vector $\mathbf{x}_i \in \mathbb{R}^d$.
+
+\section{Message Passing Framework}
+The message passing framework \cite{gilmer2017neural} unifies many GNN architectures. At each layer $k$,
+every node $v$ computes:
+
+\begin{equation}
+\mathbf{h}_v^{(k+1)} = \phi\left(
+    \mathbf{h}_v^{(k)},\;
+    \bigoplus_{u \in \mathcal{N}(v)} \psi\left(\mathbf{h}_v^{(k)}, \mathbf{h}_u^{(k)}, \mathbf{e}_{vu}\right)
+\right)
+\label{eq:message_passing}
+\end{equation}
+
+where $\mathcal{N}(v)$ denotes the neighbors of $v$, $\psi$ is the \textit{message function},
+$\bigoplus$ is a permutation-invariant aggregation operator (sum, mean, or max), and $\phi$ is the
+\textit{update function}.
+
+\subsection{Graph Convolutional Networks}
+The Graph Convolutional Network (GCN) \cite{kipf2017semi} uses a simple weighted sum aggregation:
+
+\begin{equation}
+\mathbf{H}^{(k+1)} = \sigma\left(
+    \tilde{\mathbf{D}}^{-\frac{1}{2}} \tilde{\mathbf{A}} \tilde{\mathbf{D}}^{-\frac{1}{2}}
+    \mathbf{H}^{(k)} \mathbf{W}^{(k)}
+\right)
+\label{eq:gcn}
+\end{equation}
+
+where $\tilde{\mathbf{A}} = \mathbf{A} + \mathbf{I}$ is the adjacency matrix with self-loops,
+$\tilde{\mathbf{D}}_{ii} = \sum_j \tilde{\mathbf{A}}_{ij}$ is the degree matrix,
+$\mathbf{W}^{(k)}$ is a learnable weight matrix, and $\sigma$ is a nonlinearity.
+
+\subsection{Graph Attention Networks}
+Graph Attention Networks (GATs) \cite{velickovic2018graph} introduce learnable attention coefficients:
+
+\begin{equation}
+\alpha_{vu} = \frac{
+    \exp\left(\text{LeakyReLU}\left(\mathbf{a}^\top [\mathbf{W}\mathbf{h}_v \,\|\, \mathbf{W}\mathbf{h}_u]\right)\right)
+}{
+    \sum_{w \in \mathcal{N}(v)} \exp\left(\text{LeakyReLU}\left(\mathbf{a}^\top [\mathbf{W}\mathbf{h}_v \,\|\, \mathbf{W}\mathbf{h}_w]\right)\right)
+}
+\label{eq:gat_attention}
+\end{equation}
+
+The updated node representation is then:
+
+\begin{equation}
+\mathbf{h}'_v = \sigma\left(\sum_{u \in \mathcal{N}(v)} \alpha_{vu} \mathbf{W}\mathbf{h}_u\right)
+\label{eq:gat_update}
+\end{equation}
+
+Multi-head attention extends this by computing $K$ independent attention mechanisms and concatenating
+(or averaging) their outputs.
+
+\section{Expressiveness and Limitations}
+The expressive power of GNNs is bounded by the 1-dimensional Weisfeiler-Lehman (1-WL) graph isomorphism
+test \cite{xu2019powerful}. Two non-isomorphic graphs that 1-WL cannot distinguish will also be
+indistinguishable to any standard GNN.
+
+To overcome this limitation, researchers have proposed:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Positional encodings:} Inject node position information via Laplacian eigenvectors or random walk features.
+    \item \textbf{Higher-order GNNs:} Operate on $k$-tuples of nodes rather than individual nodes.
+    \item \textbf{Subgraph GNNs:} Process local subgraphs to break symmetry.
+\end{itemize}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Comparison of GNN architectures}
+    \label{tab:gnn_comparison}
+    \begin{tabular}{@{}lccc@{}}
+        \toprule
+        Architecture & Aggregation & Attention & Complexity \\
+        \midrule
+        GCN          & Mean        & No        & $\mathcal{O}(|\mathcal{E}|)$ \\
+        GraphSAGE    & Mean/Max    & No        & $\mathcal{O}(|\mathcal{E}|)$ \\
+        GAT          & Weighted Sum& Yes       & $\mathcal{O}(|\mathcal{E}|)$ \\
+        GIN          & Sum         & No        & $\mathcal{O}(|\mathcal{E}|)$ \\
+        MPNN         & Any         & Optional  & Varies \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Empirical Evaluation}
+We evaluate the architectures on three standard benchmarks: Cora, CiteSeer, and PubMed for node
+classification, and PROTEINS and NCI1 for graph classification. Table~\ref{tab:results} summarizes
+our findings.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Test accuracy (\%) across benchmarks}
+    \label{tab:results}
+    \begin{tabular}{@{}lccccc@{}}
+        \toprule
+        Model    & Cora  & CiteSeer & PubMed & PROTEINS & NCI1 \\
+        \midrule
+        GCN      & 81.5  & 70.3     & 79.0   & 76.0     & 80.2 \\
+        GAT      & 83.0  & 72.5     & 79.0   & 74.7     & 78.5 \\
+        GIN      & 82.1  & 71.8     & 78.8   & 76.2     & 82.7 \\
+        GraphSAGE& 81.8  & 71.2     & 78.5   & 75.9     & 77.7 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Conclusion}
+We have provided a mathematical introduction to graph neural networks, covering the message passing
+paradigm, major architectural variants, and theoretical limitations. GNNs represent a powerful and
+flexible framework that continues to drive advances across diverse scientific domains.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{9}
+
+\bibitem{gilmer2017neural}
+J.~Gilmer, S.~Schoenholz, P.~Riley, O.~Vinyals, and G.~Dahl.
+\newblock Neural message passing for quantum chemistry.
+\newblock In \emph{ICML}, 2017.
+
+\bibitem{kipf2017semi}
+T.~Kipf and M.~Welling.
+\newblock Semi-supervised classification with graph convolutional networks.
+\newblock In \emph{ICLR}, 2017.
+
+\bibitem{velickovic2018graph}
+P.~Veli\v{c}kovi\'{c}, G.~Cucurull, A.~Casanova, A.~Romero, P.~Li\`{o}, and Y.~Bengio.
+\newblock Graph attention networks.
+\newblock In \emph{ICLR}, 2018.
+
+\bibitem{xu2019powerful}
+K.~Xu, W.~Hu, J.~Leskovec, and S.~Jegelka.
+\newblock How powerful are graph neural networks?
+\newblock In \emph{ICLR}, 2019.
+
+\end{thebibliography}
+
+\end{document}
