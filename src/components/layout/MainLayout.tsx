@@ -10,8 +10,11 @@ import AISkillsPanel from "../ai-skills/AISkillsPanel";
 import PluginManager from "../plugin-manager/PluginManager";
 import SettingsPanel from "../settings/SettingsPanel";
 import GitPanel from "../git/GitPanel";
+import OutlinePanel from "../outline/OutlinePanel";
+import CommandPalette from "../palette/CommandPalette";
+import ShortcutsHelp from "../shortcuts/ShortcutsHelp";
 
-type Panel = "files" | "components" | "skills" | "git" | "errors";
+type Panel = "files" | "components" | "skills" | "git" | "outline" | "errors";
 
 export default function MainLayout() {
   const [leftPanel, setLeftPanel] = useState<Panel>("files");
@@ -26,6 +29,8 @@ export default function MainLayout() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showPlugins, setShowPlugins] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const compileRef = useRef<() => void>(() => {});
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
@@ -53,17 +58,39 @@ export default function MainLayout() {
   useEffect(() => {
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
+
+    const kbd = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "p") {
+        e.preventDefault();
+        setShowPalette((s) => !s);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        // Wait for second key
+        const handler = (e2: KeyboardEvent) => {
+          if (e2.key === "s" || e2.key === "S") {
+            e2.preventDefault();
+            setShowShortcuts((s) => !s);
+          }
+          window.removeEventListener("keydown", handler);
+        };
+        window.addEventListener("keydown", handler, { once: true });
+      }
+    };
+    window.addEventListener("keydown", kbd);
+
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("keydown", kbd);
     };
   }, [handleMouseMove, handleMouseUp]);
 
   const panelNames: Record<Panel, string> = {
     files: "Files",
-    components: "Components",
-    skills: "Skills",
+    components: "Comp",
+    skills: "AI",
     git: "Git",
+    outline: "Outline",
     errors: "Issues",
   };
 
@@ -100,6 +127,7 @@ export default function MainLayout() {
                 {leftPanel === "components" && <ComponentLibrary />}
                 {leftPanel === "skills" && <AISkillsPanel />}
                 {leftPanel === "git" && <GitPanel />}
+                {leftPanel === "outline" && <OutlinePanel />}
                 {leftPanel === "errors" && <ErrorPanel />}
               </div>
             </div>
@@ -162,6 +190,8 @@ export default function MainLayout() {
       {showTemplates && <TemplateGallery onClose={() => setShowTemplates(false)} />}
       {showPlugins && <PluginManager onClose={() => setShowPlugins(false)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
+      {showShortcuts && <ShortcutsHelp onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

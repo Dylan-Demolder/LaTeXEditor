@@ -94,7 +94,20 @@ export default function PDFPreview() {
               </button>
               <select
                 value={scale}
-                onChange={(e) => setScale(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "fit") {
+                    if (canvasRef.current && containerRef.current) {
+                      const containerWidth = containerRef.current.clientWidth - 32;
+                      if (canvasRef.current.width > 0) {
+                        const fitScale = Math.round((containerWidth / canvasRef.current.width) * 100) / 100;
+                        setScale(fitScale);
+                      }
+                    }
+                  } else {
+                    setScale(Number(val));
+                  }
+                }}
                 className="bg-gray-700 text-gray-300 text-xs px-1 py-0.5 rounded"
               >
                 <option value={0.75}>75%</option>
@@ -102,6 +115,7 @@ export default function PDFPreview() {
                 <option value={1.2}>120%</option>
                 <option value={1.5}>150%</option>
                 <option value={2.0}>200%</option>
+                <option value="fit">Fit Width</option>
               </select>
             </>
           )}
