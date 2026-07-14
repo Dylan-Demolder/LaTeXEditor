@@ -53,3 +53,22 @@ export async function checkCompilers(): Promise<string[]> {
 export async function readPdf(filePath: string): Promise<number[]> {
   return invoke<number[]>("read_pdf", { filePath });
 }
+
+export async function setMcpProject(
+  projectPath: string | null,
+  activeFilePath: string | null
+): Promise<void> {
+  return invoke<void>("set_mcp_project", {
+    projectPath,
+    activeFile: activeFilePath,
+  });
+}
+
+export async function getMcpStatus(): Promise<{
+  port: number;
+  running: boolean;
+  endpoint: string;
+  sse_endpoint: string;
+}> {
+  return invoke("get_mcp_status");
+}

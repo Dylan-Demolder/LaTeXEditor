@@ -4,6 +4,7 @@ import {
   openProject,
   compileLatex,
   checkCompilers,
+  setMcpProject,
 } from "../../hooks/useTauriCommands";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -43,6 +44,12 @@ export default function Toolbar({ onNewFromTemplate }: Props) {
     });
   }, []);
 
+  useEffect(() => {
+    if (projectPath) {
+      setMcpProject(projectPath, activeFilePath);
+    }
+  }, [projectPath, activeFilePath]);
+
   const handleOpenProject = useCallback(async () => {
     try {
       const selected = await open({
@@ -54,6 +61,7 @@ export default function Toolbar({ onNewFromTemplate }: Props) {
         const result = await openProject(selected);
         setProjectPath(result.root);
         setFiles(result.files);
+        setMcpProject(result.root, null);
       }
     } catch (e) {
       console.error("Failed to open project:", e);

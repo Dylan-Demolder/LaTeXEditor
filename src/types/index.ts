@@ -33,6 +33,17 @@ export interface CompileCommandResult {
   message: string;
 }
 
+export interface AISkill {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  category: "edit" | "analyze" | "generate" | "fix";
+  systemPrompt: string;
+  userPromptTemplate: string;
+  args: { key: string; label: string; placeholder: string }[];
+}
+
 export interface AppState {
   projectPath: string | null;
   files: FileEntry[];

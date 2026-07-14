@@ -24,7 +24,12 @@ tauri-plugin-log = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
-tokio = { version = "1", features = ["process", "io-util", "fs"] }
+tokio = { version = "1", features = ["process", "io-util", "fs", "sync", "rt-multi-thread", "macros"] }
 regex = "1"
 walkdir = "2"
 thiserror = "2"
+axum = { version = "0.8", features = ["json"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
