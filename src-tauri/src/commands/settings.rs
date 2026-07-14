@@ -36,7 +36,7 @@ pub async fn call_ai(request: AiCallRequest) -> Result<AiCallResponse, String> {
     let api_key = settings.api_keys.get(&request.provider).cloned();
 
     match request.provider.as_str() {
-        "openai" | "deepseek" | "grok" | "ollama" | "opencode-go" => {
+        "openai" | "deepseek" | "grok" | "ollama" => {
             call_openai_compatible(
                 &request,
                 api_key.as_deref(),
@@ -44,12 +44,14 @@ pub async fn call_ai(request: AiCallRequest) -> Result<AiCallResponse, String> {
                     "openai" => "https://api.openai.com/v1/chat/completions",
                     "deepseek" => "https://api.deepseek.com/v1/chat/completions",
                     "grok" => "https://api.x.ai/v1/chat/completions",
-                    "opencode-go" => "https://api.opencode.ai/v1/chat/completions",
                     "ollama" => "http://localhost:11434/v1/chat/completions",
                     _ => "https://api.openai.com/v1/chat/completions",
                 },
             )
             .await
+        }
+        "opencode-go" => {
+            call_opencode_go(&request, api_key.as_deref()).await
         }
         "anthropic" => {
             call_anthropic(&request, api_key.as_deref()).await
@@ -245,6 +247,49 @@ async fn call_openrouter(
         model: req.model.clone(),
         usage,
     })
+}
+
+async fn call_opencode_go(
+    req: &AiCallRequest,
+    api_key: Option<&str>,
+) -> Result<AiCallResponse, String> {
+    let key = api_key.ok_or("OpenCode Go API key not configured")?;
+    let is_anthropic = req.model.starts_with("minimax-") || req.model.starts_with("qwen");
+
+    if is_anthropic {
+        let body = serde_json::json!({
+            "model": req.model,
+            "max_tokens": req.max_tokens,
+            "system": req.system_prompt,
+            "messages": [{"role": "user", "content": req.user_prompt}],
+        });
+        let client = reqwest::Client::new();
+        let response = client
+            .post("https://opencode.ai/zen/go/v1/messages")
+            .header("x-api-key", key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send().await.map_err(|e| format!("API request failed: {}", e))?;
+
+        let status = response.status();
+        let raw_body = response.text().await.map_err(|e| format!("Body read: {}", e))?;
+        let json: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
+            format!("Non-JSON (status {}): {}\n{}", status, e, &raw_body[..raw_body.len().min(500)])
+        })?;
+        if !status.is_success() {
+            let msg = json["error"]["message"].as_str().unwrap_or("Unknown error");
+            return Err(format!("API error ({}): {}", status, msg));
+        }
+        let content = json["content"][0]["text"].as_str().unwrap_or("").to_string();
+        let usage = json.get("usage").map(|u| AiUsage {
+            prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0) as u32,
+            completion_tokens: u["output_tokens"].as_u64().unwrap_or(0) as u32,
+            total_tokens: (u["input_tokens"].as_u64().unwrap_or(0) + u["output_tokens"].as_u64().unwrap_or(0)) as u32,
+        });
+        Ok(AiCallResponse { content, model: req.model.clone(), usage })
+    } else {
+        call_openai_compatible(req, Some(key), "https://opencode.ai/zen/go/v1/chat/completions").await
+    }
 }
 
 #[tauri::command]
