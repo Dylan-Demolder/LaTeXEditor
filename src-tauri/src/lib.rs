@@ -1,10 +1,12 @@
 mod app_config;
 mod commands;
+mod git;
 mod latex;
 mod mcp;
 mod plugins;
+mod synctex;
 
-use commands::{compile, plugin, project, settings};
+use commands::{compile, features, plugin, project, settings};
 use mcp::server;
 use mcp::protocol::McpState;
 use std::sync::Arc;
@@ -53,6 +55,18 @@ pub fn run() {
             settings::call_ai,
             settings::load_settings,
             settings::save_settings,
+            features::git_status,
+            features::git_init,
+            features::git_add,
+            features::git_commit,
+            features::git_push,
+            features::git_pull,
+            features::git_diff,
+            features::git_checkout,
+            features::synctex_forward,
+            features::synctex_inverse,
+            features::find_root_file,
+            features::get_dependencies,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

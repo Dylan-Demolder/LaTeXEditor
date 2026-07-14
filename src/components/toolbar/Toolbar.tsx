@@ -5,6 +5,7 @@ import {
   compileLatex,
   checkCompilers,
   setMcpProject,
+  findRootFile,
 } from "../../hooks/useTauriCommands";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -12,9 +13,10 @@ interface Props {
   onNewFromTemplate: () => void;
   onOpenPlugins: () => void;
   onOpenSettings: () => void;
+  compileRef: React.MutableRefObject<() => void>;
 }
 
-export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettings }: Props) {
+export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettings, compileRef }: Props) {
   const {
     projectPath,
     activeFilePath,
@@ -73,7 +75,16 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
   const handleCompile = useCallback(async () => {
     if (!activeFilePath) return;
 
-    const texFile = activeFilePath;
+    let texFile = activeFilePath;
+
+    // Smart compile: find root .tex file (the one with \documentclass)
+    if (projectPath) {
+      try {
+        const root = await findRootFile(projectPath);
+        if (root) texFile = root;
+      } catch {}
+    }
+
     const outDir = projectPath
       ? `${projectPath}/build`
       : texFile.substring(0, texFile.lastIndexOf("/")) + "/build";
@@ -116,6 +127,8 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
     setCompileBadboxes,
     setPdfPath,
   ]);
+
+  useEffect(() => { compileRef.current = handleCompile; }, [handleCompile, compileRef]);
 
   const handleKeyboardCompile = useCallback(
     (e: KeyboardEvent) => {

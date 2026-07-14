@@ -9,8 +9,9 @@ import TemplateGallery from "../templates/TemplateGallery";
 import AISkillsPanel from "../ai-skills/AISkillsPanel";
 import PluginManager from "../plugin-manager/PluginManager";
 import SettingsPanel from "../settings/SettingsPanel";
+import GitPanel from "../git/GitPanel";
 
-type Panel = "files" | "components" | "skills" | "errors";
+type Panel = "files" | "components" | "skills" | "git" | "errors";
 
 export default function MainLayout() {
   const [leftPanel, setLeftPanel] = useState<Panel>("files");
@@ -25,27 +26,21 @@ export default function MainLayout() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showPlugins, setShowPlugins] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const compileRef = useRef<() => void>(() => {});
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (isDraggingRight.current) {
-        setRightWidth(Math.max(300, Math.min(window.innerWidth - 400, e.clientX)));
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isDraggingRight.current)
+      setRightWidth(Math.max(300, Math.min(window.innerWidth - 400, e.clientX)));
+    if (isDraggingBottom.current) {
+      const parent = document.querySelector(".editor-preview-container");
+      if (parent) {
+        const rect = parent.getBoundingClientRect();
+        setBottomHeight(Math.max(100, Math.min(rect.height - 200, rect.bottom - e.clientY)));
       }
-      if (isDraggingBottom.current) {
-        const parent = document.querySelector(".editor-preview-container");
-        if (parent) {
-          const rect = parent.getBoundingClientRect();
-          setBottomHeight(
-            Math.max(100, Math.min(rect.height - 200, rect.bottom - e.clientY))
-          );
-        }
-      }
-      if (isDraggingLeft.current) {
-        setLeftWidth(Math.max(180, Math.min(500, e.clientX)));
-      }
-    },
-    []
-  );
+    }
+    if (isDraggingLeft.current)
+      setLeftWidth(Math.max(180, Math.min(500, e.clientX)));
+  }, []);
 
   const handleMouseUp = useCallback(() => {
     isDraggingRight.current = false;
@@ -64,12 +59,21 @@ export default function MainLayout() {
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  const panelNames: Record<Panel, string> = {
+    files: "Files",
+    components: "Components",
+    skills: "Skills",
+    git: "Git",
+    errors: "Issues",
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white overflow-hidden">
       <Toolbar
         onNewFromTemplate={() => setShowTemplates(true)}
         onOpenPlugins={() => setShowPlugins(true)}
         onOpenSettings={() => setShowSettings(true)}
+        compileRef={compileRef}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -77,7 +81,7 @@ export default function MainLayout() {
           <>
             <div className="h-full flex flex-col" style={{ width: leftWidth }}>
               <div className="flex border-b border-gray-700">
-                {(["files", "components", "skills", "errors"] as Panel[]).map((panel) => (
+                {(Object.keys(panelNames) as Panel[]).map((panel) => (
                   <button
                     key={panel}
                     onClick={() => setLeftPanel(panel)}
@@ -87,7 +91,7 @@ export default function MainLayout() {
                         : "text-gray-500 hover:text-gray-300"
                     }`}
                   >
-                    {panel === "files" ? "Files" : panel === "components" ? "Components" : panel === "skills" ? "Skills" : "Issues"}
+                    {panelNames[panel]}
                   </button>
                 ))}
               </div>
@@ -95,10 +99,10 @@ export default function MainLayout() {
                 {leftPanel === "files" && <FileTree />}
                 {leftPanel === "components" && <ComponentLibrary />}
                 {leftPanel === "skills" && <AISkillsPanel />}
+                {leftPanel === "git" && <GitPanel />}
                 {leftPanel === "errors" && <ErrorPanel />}
               </div>
             </div>
-
             <div
               className="w-1 bg-gray-700 hover:bg-blue-500 cursor-col-resize flex-shrink-0 transition-colors"
               onMouseDown={(e) => {
@@ -121,9 +125,8 @@ export default function MainLayout() {
 
         <div className="flex-1 flex editor-preview-container overflow-hidden">
           <div className="flex-1 h-full min-w-0">
-            <LaTeXEditor />
+            <LaTeXEditor onCompile={() => compileRef.current?.()} />
           </div>
-
           <div
             className="w-1 bg-gray-700 hover:bg-blue-500 cursor-col-resize flex-shrink-0 transition-colors"
             onMouseDown={(e) => {
@@ -133,7 +136,6 @@ export default function MainLayout() {
               e.preventDefault();
             }}
           />
-
           <div className="h-full min-w-0" style={{ width: rightWidth }}>
             <PDFPreview />
           </div>
@@ -157,15 +159,9 @@ export default function MainLayout() {
         </>
       )}
 
-      {showTemplates && (
-        <TemplateGallery onClose={() => setShowTemplates(false)} />
-      )}
-      {showPlugins && (
-        <PluginManager onClose={() => setShowPlugins(false)} />
-      )}
-      {showSettings && (
-        <SettingsPanel onClose={() => setShowSettings(false)} />
-      )}
+      {showTemplates && <TemplateGallery onClose={() => setShowTemplates(false)} />}
+      {showPlugins && <PluginManager onClose={() => setShowPlugins(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

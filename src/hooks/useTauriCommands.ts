@@ -131,3 +131,70 @@ export async function loadSettings(): Promise<AppSettings> {
 export async function saveSettings(settings: AppSettings): Promise<void> {
   return invoke<void>("save_settings", { settings });
 }
+
+// Git commands
+export async function gitStatus(projectPath: string): Promise<{
+  is_repo: boolean;
+  status: any;
+  commits: any[];
+  branches: string[];
+}> {
+  return invoke("git_status", { projectPath });
+}
+
+export async function gitInit(projectPath: string): Promise<string> {
+  return invoke("git_init", { projectPath });
+}
+
+export async function gitAdd(projectPath: string, files: string[]): Promise<string> {
+  return invoke("git_add", { projectPath, files });
+}
+
+export async function gitCommit(projectPath: string, message: string): Promise<string> {
+  return invoke("git_commit", { projectPath, message });
+}
+
+export async function gitPush(projectPath: string): Promise<string> {
+  return invoke("git_push", { projectPath });
+}
+
+export async function gitPull(projectPath: string): Promise<string> {
+  return invoke("git_pull", { projectPath });
+}
+
+export async function gitDiff(projectPath: string, filePath: string): Promise<any> {
+  return invoke("git_diff", { projectPath, filePath });
+}
+
+export async function gitCheckout(projectPath: string, branch: string): Promise<string> {
+  return invoke("git_checkout", { projectPath, branch });
+}
+
+// SyncTeX
+export async function synctexForward(
+  texPath: string,
+  outputDir: string,
+  line: number,
+  col: number
+): Promise<{ successful: boolean; page?: number }> {
+  return invoke("synctex_forward", { texPath, outputDir, line, col });
+}
+
+export async function synctexInverse(
+  texPath: string,
+  outputDir: string,
+  page: number,
+  x: number,
+  y: number
+): Promise<{ successful: boolean; file?: string; line?: number }> {
+  return invoke("synctex_inverse", { texPath, outputDir, page, x, y });
+}
+
+// Multi-file
+export async function findRootFile(projectPath: string): Promise<string> {
+  return invoke("find_root_file", { projectPath });
+}
+
+export async function getDependencies(texPath: string): Promise<any[]> {
+  return invoke("get_dependencies", { texPath });
+}

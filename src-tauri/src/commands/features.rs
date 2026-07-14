@@ -1,0 +1,214 @@
+use crate::commands::project;
+use crate::git;
+use crate::synctex;
+use serde::Serialize;
+use std::path::PathBuf;
+
+// ── Git commands ──
+
+#[derive(Debug, Serialize)]
+pub struct GitInfo {
+    pub is_repo: bool,
+    pub status: Option<git::commands::GitStatus>,
+    pub commits: Vec<git::commands::GitCommit>,
+    pub branches: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn git_status(project_path: String) -> Result<GitInfo, String> {
+    let status = git::commands::get_status(&project_path)?;
+    let commits = git::commands::git_log(&project_path, 10).unwrap_or_default();
+    let branches = git::commands::git_branches(&project_path).unwrap_or_default();
+    Ok(GitInfo {
+        is_repo: true,
+        status: Some(status),
+        commits,
+        branches,
+    })
+}
+
+#[tauri::command]
+pub async fn git_init(project_path: String) -> Result<String, String> {
+    git::commands::git_init(&project_path)?;
+    Ok("Repository initialized".to_string())
+}
+
+#[tauri::command]
+pub async fn git_add(project_path: String, files: Vec<String>) -> Result<String, String> {
+    git::commands::git_add(&project_path, files)?;
+    Ok("Files staged".to_string())
+}
+
+#[tauri::command]
+pub async fn git_commit(project_path: String, message: String) -> Result<String, String> {
+    let hash = git::commands::git_commit(&project_path, &message)?;
+    Ok(hash)
+}
+
+#[tauri::command]
+pub async fn git_push(project_path: String) -> Result<String, String> {
+    git::commands::git_push(&project_path)?;
+    Ok("Pushed successfully".to_string())
+}
+
+#[tauri::command]
+pub async fn git_pull(project_path: String) -> Result<String, String> {
+    git::commands::git_pull(&project_path)?;
+    Ok("Pulled successfully".to_string())
+}
+
+#[tauri::command]
+pub async fn git_diff(project_path: String, file_path: String) -> Result<git::commands::GitDiff, String> {
+    git::commands::git_diff_file(&project_path, &file_path)
+}
+
+#[tauri::command]
+pub async fn git_checkout(project_path: String, branch: String) -> Result<String, String> {
+    git::commands::git_checkout(&project_path, &branch)?;
+    Ok(format!("Checked out {}", branch))
+}
+
+// ── SyncTeX commands ──
+
+#[derive(Debug, Serialize)]
+pub struct SyncResult {
+    pub successful: bool,
+    pub page: Option<u32>,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn synctex_forward(
+    tex_path: String,
+    output_dir: String,
+    line: u32,
+    _col: u32,
+) -> Result<SyncResult, String> {
+    let result = synctex::parse_synctex(&tex_path, &output_dir)?;
+    if let Some(page) = synctex::find_page_for_line(&result.forward, &tex_path, line) {
+        Ok(SyncResult {
+            successful: true,
+            page: Some(page),
+            file: None,
+            line: None,
+        })
+    } else {
+        Ok(SyncResult {
+            successful: false,
+            page: None,
+            file: None,
+            line: None,
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn synctex_inverse(
+    tex_path: String,
+    output_dir: String,
+    page: u32,
+    x: f64,
+    y: f64,
+) -> Result<SyncResult, String> {
+    let result = synctex::parse_synctex(&tex_path, &output_dir)?;
+    if let Some((file, line)) = synctex::find_line_for_page(&result.inverse, page, x, y) {
+        Ok(SyncResult {
+            successful: true,
+            page: None,
+            file: Some(file),
+            line: Some(line),
+        })
+    } else {
+        Ok(SyncResult {
+            successful: false,
+            page: None,
+            file: None,
+            line: None,
+        })
+    }
+}
+
+// ── Multi-file / root detection ──
+
+#[derive(Debug, Serialize)]
+pub struct ProjectStructure {
+    pub root_file: String,
+    pub files: Vec<String>,
+    pub dependencies: Vec<Dependency>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Dependency {
+    pub from: String,
+    pub to: String,
+    pub kind: String, // "input" or "include"
+}
+
+#[tauri::command]
+pub async fn find_root_file(project_path: String) -> Result<String, String> {
+    let path = PathBuf::from(&project_path);
+
+    // Scan all .tex files for \documentclass — that's the root
+    let mut entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let mut candidates = Vec::new();
+
+    while let Some(entry) = entries.next() {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let fpath = entry.path();
+        if fpath.extension().map_or(false, |e| e == "tex") {
+            if let Ok(content) = std::fs::read_to_string(&fpath) {
+                if content.contains("\\documentclass") {
+                    candidates.push(fpath.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Also scan subdirectories
+    fn scan_dir(dir: &PathBuf, candidates: &mut Vec<String>) -> Result<(), String> {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let fpath = entry.path();
+                if fpath.is_dir() {
+                    let name = fpath.file_name().unwrap_or_default().to_string_lossy();
+                    if name != "build" && !name.starts_with('.') {
+                        let _ = scan_dir(&fpath, candidates);
+                    }
+                } else if fpath.extension().map_or(false, |e| e == "tex") {
+                    if let Ok(content) = std::fs::read_to_string(&fpath) {
+                        if content.contains("\\documentclass") {
+                            candidates.push(fpath.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    scan_dir(&path, &mut candidates)?;
+
+    // Return the primary candidate (shortest path is likely the root)
+    candidates.sort_by_key(|c| c.len());
+    candidates
+        .first()
+        .cloned()
+        .ok_or_else(|| "No .tex file with \\documentclass found".to_string())
+}
+
+#[tauri::command]
+pub async fn get_dependencies(tex_path: String) -> Result<Vec<Dependency>, String> {
+    let content = project::read_file(tex_path.clone()).await?;
+    let mut deps = Vec::new();
+
+    let re_input = regex::Regex::new(r"\\(input|include)\{([^}]+)\}").unwrap();
+    for caps in re_input.captures_iter(&content) {
+        deps.push(Dependency {
+            from: tex_path.clone(),
+            to: caps[2].to_string(),
+            kind: caps[1].to_string(),
+        });
+    }
+
+    Ok(deps)
+}
