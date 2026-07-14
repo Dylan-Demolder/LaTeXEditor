@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/opencode.schema.json",
+  "plugin": ["@dietrichgebert/ponytail"],
+  "rules": [
+    {
+      "source": "./AGENTS.md",
+      "description": "Ponytail - lazy senior dev rules"
+    }
+  ]
+}
