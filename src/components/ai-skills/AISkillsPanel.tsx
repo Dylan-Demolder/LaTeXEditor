@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { aiSkills, SKILL_CATEGORIES } from "../../data/ai-skills";
 import type { AISkill } from "../../types";
 import { useAppStore } from "../../stores/useAppStore";
-import { setMcpProject } from "../../hooks/useTauriCommands";
+import { setMcpProject, callAi, loadSettings } from "../../hooks/useTauriCommands";
 
 type SkillCategory = AISkill["category"];
 
@@ -47,36 +47,32 @@ export default function AISkillsPanel() {
     setResult("Prompt copied to clipboard. Paste it to your AI agent.");
   }, [selectedSkill, argValues]);
 
-  const handleRunViaMcp = useCallback(async () => {
-    if (!selectedSkill || !projectPath || !activeFilePath) return;
+  const handleRunAi = useCallback(async () => {
+    if (!selectedSkill) return;
     setIsRunning(true);
     setResult(null);
     try {
       await setMcpProject(projectPath, activeFilePath);
 
-      let prompt = selectedSkill.systemPrompt + "\n\n" + selectedSkill.userPromptTemplate;
+      const settings = await loadSettings();
+
+      let userPrompt = selectedSkill.userPromptTemplate;
       selectedSkill.args.forEach((arg) => {
-        prompt = prompt.replace(`$$${arg.key}$$`, argValues[arg.key] || "");
+        userPrompt = userPrompt.replace(`$$${arg.key}$$`, argValues[arg.key] || "");
       });
 
-      const response = await fetch("http://127.0.0.1:9876/mcp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "read_file",
-            arguments: { path: activeFilePath },
-          },
-        }),
+      const response = await callAi({
+        provider: settings.activeProvider,
+        model: settings.activeModel,
+        systemPrompt: selectedSkill.systemPrompt,
+        userPrompt,
+        temperature: settings.temperature,
+        maxTokens: settings.maxTokens,
       });
 
-      const data = await response.json();
-      setResult(JSON.stringify(data, null, 2));
+      setResult(response.content);
     } catch (e) {
-      setResult(`MCP Error: ${e}`);
+      setResult(`Error: ${e}`);
     } finally {
       setIsRunning(false);
     }
@@ -124,15 +120,15 @@ export default function AISkillsPanel() {
                 Copy Prompt
               </button>
               <button
-                onClick={handleRunViaMcp}
-                disabled={isRunning || !projectPath}
+                onClick={handleRunAi}
+                disabled={isRunning}
                 className={`flex-1 px-3 py-1.5 text-xs rounded transition-colors ${
-                  !projectPath || isRunning
+                  isRunning
                     ? "bg-gray-700 text-gray-500"
                     : "bg-blue-600 hover:bg-blue-500 text-white"
                 }`}
               >
-                {isRunning ? "Running..." : "Run via MCP"}
+                {isRunning ? "Running..." : "Run AI"}
               </button>
             </div>
 

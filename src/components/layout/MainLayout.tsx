@@ -8,6 +8,7 @@ import ComponentLibrary from "../component-library/ComponentLibrary";
 import TemplateGallery from "../templates/TemplateGallery";
 import AISkillsPanel from "../ai-skills/AISkillsPanel";
 import PluginManager from "../plugin-manager/PluginManager";
+import SettingsPanel from "../settings/SettingsPanel";
 
 type Panel = "files" | "components" | "skills" | "errors";
 
@@ -23,6 +24,7 @@ export default function MainLayout() {
   const [showBottomPanel] = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showPlugins, setShowPlugins] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
@@ -64,7 +66,11 @@ export default function MainLayout() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white overflow-hidden">
-      <Toolbar onNewFromTemplate={() => setShowTemplates(true)} onOpenPlugins={() => setShowPlugins(true)} />
+      <Toolbar
+        onNewFromTemplate={() => setShowTemplates(true)}
+        onOpenPlugins={() => setShowPlugins(true)}
+        onOpenSettings={() => setShowSettings(true)}
+      />
 
       <div className="flex-1 flex overflow-hidden">
         {showLeftPanel && (
@@ -156,6 +162,9 @@ export default function MainLayout() {
       )}
       {showPlugins && (
         <PluginManager onClose={() => setShowPlugins(false)} />
+      )}
+      {showSettings && (
+        <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

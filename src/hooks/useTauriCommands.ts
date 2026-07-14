@@ -80,3 +80,54 @@ export async function listPlugins(): Promise<any[]> {
 export async function readPluginFile(pluginPath: string, fileName: string): Promise<string> {
   return invoke<string>("read_plugin_file", { pluginPath, fileName });
 }
+
+export interface AiCallRequest {
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+export interface AiCallResponse {
+  content: string;
+  model: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+export async function callAi(req: AiCallRequest): Promise<AiCallResponse> {
+  return invoke<AiCallResponse>("call_ai", {
+    request: {
+      provider: req.provider,
+      model: req.model,
+      system_prompt: req.systemPrompt,
+      user_prompt: req.userPrompt,
+      temperature: req.temperature || 0.7,
+      max_tokens: req.maxTokens || 4096,
+    },
+  });
+}
+
+export interface AppSettings {
+  activeProvider: string;
+  activeModel: string;
+  apiKeys: Record<string, string>;
+  temperature: number;
+  maxTokens: number;
+  theme: "dark" | "light";
+  autoCompile: boolean;
+  mcpPort: number;
+}
+
+export async function loadSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("load_settings");
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  return invoke<void>("save_settings", { settings });
+}

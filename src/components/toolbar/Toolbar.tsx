@@ -11,9 +11,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 interface Props {
   onNewFromTemplate: () => void;
   onOpenPlugins: () => void;
+  onOpenSettings: () => void;
 }
 
-export default function Toolbar({ onNewFromTemplate, onOpenPlugins }: Props) {
+export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettings }: Props) {
   const {
     projectPath,
     activeFilePath,
@@ -161,6 +162,13 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins }: Props) {
         className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
       >
         Plugins
+      </button>
+
+      <button
+        onClick={onOpenSettings}
+        className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
+      >
+        Settings
       </button>
 
       {compilers.length > 0 && (
