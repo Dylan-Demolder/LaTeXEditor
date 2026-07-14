@@ -1,0 +1,10 @@
+{
+  "name": "Physics Snippets",
+  "version": "1.0.0",
+  "type": "snippets",
+  "icon": "⚛",
+  "description": "Common physics LaTeX snippets: Maxwell, Schrödinger, Navier-Stokes",
+  "author": "LaTeXEditor",
+  "main": "index.js",
+  "activation": "on-demand"
+}

@@ -72,3 +72,11 @@ export async function getMcpStatus(): Promise<{
 }> {
   return invoke("get_mcp_status");
 }
+
+export async function listPlugins(): Promise<any[]> {
+  return invoke<any[]>("list_plugins");
+}
+
+export async function readPluginFile(pluginPath: string, fileName: string): Promise<string> {
+  return invoke<string>("read_plugin_file", { pluginPath, fileName });
+}

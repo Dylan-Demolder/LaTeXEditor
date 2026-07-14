@@ -1,8 +1,9 @@
 mod commands;
 mod latex;
 mod mcp;
+mod plugins;
 
-use commands::{compile, project};
+use commands::{compile, plugin, project};
 use mcp::server;
 use mcp::protocol::McpState;
 use std::sync::Arc;
@@ -44,6 +45,10 @@ pub fn run() {
             project::read_pdf,
             set_mcp_project,
             get_mcp_status,
+            plugin::list_plugins,
+            plugin::get_plugin,
+            plugin::read_plugin_file,
+            plugin::get_plugin_assets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

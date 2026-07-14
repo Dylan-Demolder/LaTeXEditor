@@ -10,9 +10,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 interface Props {
   onNewFromTemplate: () => void;
+  onOpenPlugins: () => void;
 }
 
-export default function Toolbar({ onNewFromTemplate }: Props) {
+export default function Toolbar({ onNewFromTemplate, onOpenPlugins }: Props) {
   const {
     projectPath,
     activeFilePath,
@@ -154,6 +155,13 @@ export default function Toolbar({ onNewFromTemplate }: Props) {
       )}
 
       <div className="flex-1" />
+
+      <button
+        onClick={onOpenPlugins}
+        className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
+      >
+        Plugins
+      </button>
 
       {compilers.length > 0 && (
         <select
