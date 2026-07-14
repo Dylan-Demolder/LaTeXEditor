@@ -36,7 +36,7 @@ pub async fn call_ai(request: AiCallRequest) -> Result<AiCallResponse, String> {
     let api_key = settings.api_keys.get(&request.provider).cloned();
 
     match request.provider.as_str() {
-        "openai" | "deepseek" | "grok" | "ollama" => {
+        "openai" | "deepseek" | "grok" | "ollama" | "opencode-go" => {
             call_openai_compatible(
                 &request,
                 api_key.as_deref(),
@@ -44,6 +44,7 @@ pub async fn call_ai(request: AiCallRequest) -> Result<AiCallResponse, String> {
                     "openai" => "https://api.openai.com/v1/chat/completions",
                     "deepseek" => "https://api.deepseek.com/v1/chat/completions",
                     "grok" => "https://api.x.ai/v1/chat/completions",
+                    "opencode-go" => "https://api.opencode.ai/v1/chat/completions",
                     "ollama" => "http://localhost:11434/v1/chat/completions",
                     _ => "https://api.openai.com/v1/chat/completions",
                 },
@@ -55,9 +56,6 @@ pub async fn call_ai(request: AiCallRequest) -> Result<AiCallResponse, String> {
         }
         "openrouter" => {
             call_openrouter(&request, api_key.as_deref()).await
-        }
-        "opencode" => {
-            call_opencode_mcp(&request).await
         }
         _ => Err(format!("Unknown provider: {}", request.provider)),
     }
@@ -237,40 +235,6 @@ async fn call_openrouter(
         content,
         model: req.model.clone(),
         usage,
-    })
-}
-
-async fn call_opencode_mcp(_req: &AiCallRequest) -> Result<AiCallResponse, String> {
-    let client = reqwest::Client::new();
-
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
-            "name": "compile",
-            "arguments": { "path": "" }
-        }
-    });
-
-    let response = client
-        .post("http://127.0.0.1:9876/mcp")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("MCP request failed: {}", e))?;
-
-    let _json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse: {}", e))?;
-
-    Ok(AiCallResponse {
-        content: format!(
-            "MCP Server at http://127.0.0.1:9876\nActive tools: compile, read_file, write_file, get_errors, get_project_structure, get_section_structure\n\nUse any MCP client connected to this endpoint.",
-        ),
-        model: "mcp-agent".to_string(),
-        usage: None,
     })
 }
 
