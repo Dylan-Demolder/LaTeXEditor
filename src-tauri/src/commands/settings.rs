@@ -97,10 +97,19 @@ async fn call_openai_compatible(
         .map_err(|e| format!("API request failed: {}", e))?;
 
     let status = response.status();
-    let json: serde_json::Value = response
-        .json()
+    let raw_body = response
+        .text()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    let json: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
+        format!(
+            "API returned non-JSON response (status {}): {}\nBody: {}",
+            status,
+            e,
+            &raw_body[..raw_body.len().min(1000)]
+        )
+    })?;
 
     if !status.is_success() {
         let error_msg = json["error"]["message"]
