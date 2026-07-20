@@ -40,7 +40,13 @@ has assert-based checks that run under plain `node` and `cargo test`.
 `demo-project/` holds sample documents — including `broken.tex`, which fails to
 compile on purpose so you can exercise the error panel.
 
-**`demo-project/tutorial/` is a hands-on tutorial and what first launch opens.**
+**`demo-project/tutorial/` is a hands-on tutorial.** First launch *offers* it —
+a welcome dialog with "Start the tutorial" and "Skip for now", rather than
+opening it unasked, since someone who installed a LaTeX editor to work on a
+document they already have shouldn't have to close a tutorial first. It's
+reachable afterwards from Settings → Help or the command palette, and
+**Start over** restores the pristine copy, renaming your current one to
+`LaTeXEditor Tutorial (previous 1)` rather than deleting it.
 One file, nine steps, about fifteen minutes: you finish a real one-page report
 and use ⌘K, the refine loop, three AI skills, and the error panel on the way.
 The instructions are `%` comments sitting directly above the work, so they're
@@ -79,6 +85,18 @@ of round numbers), ⌘+ / ⌘− / ⌘0 while the pointer is over the preview, o
 / ctrl-scroll — which zooms continuously and keeps the point under the pointer
 still. Fit width and Fit page are *modes*, not one-off calculations: a
 `ResizeObserver` re-fits when you drag the splitter.
+
+**Settings** — six sections behind a left nav: AI (provider, model, keys, test
+connection, temperature, token cap, deliberation), Editor (font size, line
+height, tab size, word wrap, line numbers, minimap, autosave delay — 0 turns
+autosave off), Compilation (default compiler from those actually detected,
+typeset-on-save, default preview zoom), Appearance, Help (open or restart the
+tutorial, open the guide, re-arm the welcome screen), and About (version,
+compilers found, live MCP endpoint, settings path, installed skills).
+
+Editor preferences are pushed into the store on save, so the font size changes
+under you rather than at next launch. Every field carries a serde default, so a
+settings file written by an older build still loads — there's a test for it.
 
 **Panels** — file tree (create, rename, delete, refresh), component library
 (insert parameterized LaTeX blocks at the cursor), AI skills, Git (stage,

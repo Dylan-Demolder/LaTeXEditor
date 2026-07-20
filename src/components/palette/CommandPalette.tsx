@@ -22,6 +22,9 @@ export interface PaletteHandlers {
   showComponents: () => void;
   showSettings: () => void;
   showPlugins: () => void;
+  openTutorial: () => void;
+  restartTutorial: () => void;
+  openGuide: () => void;
 }
 
 interface Props {
@@ -42,6 +45,9 @@ export default function CommandPalette({ onClose, handlers }: Props) {
       { id: "new-template", label: "New from Template", shortcut: "", category: "File", action: handlers.newFromTemplate },
       { id: "settings", label: "Open Settings", shortcut: "", category: "File", action: handlers.showSettings },
       { id: "plugins", label: "Open Plugin Manager", shortcut: "", category: "File", action: handlers.showPlugins },
+      { id: "tutorial", label: "Open Tutorial", shortcut: "", category: "Help", action: handlers.openTutorial },
+      { id: "tutorial-reset", label: "Restart Tutorial from the Beginning", shortcut: "", category: "Help", action: handlers.restartTutorial },
+      { id: "guide", label: "Open Reference Guide", shortcut: "", category: "Help", action: handlers.openGuide },
       { id: "toggle-files", label: "Toggle Sidebar", shortcut: "", category: "View", action: handlers.toggleFilesPanel },
       { id: "toggle-preview", label: "Toggle PDF Preview", shortcut: "", category: "View", action: handlers.togglePreview },
       { id: "toggle-issues", label: "Toggle Issues Panel", shortcut: "", category: "View", action: handlers.toggleIssuesPanel },

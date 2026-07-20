@@ -1,50 +1,98 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import MainLayout from "./components/layout/MainLayout";
+import WelcomeDialog from "./components/onboarding/WelcomeDialog";
 import {
   loadSettings,
   saveSettings,
   ensureSampleProject,
-  openProject,
-  readFile,
+  openTutorial,
 } from "./hooks/useTauriCommands";
+import { openProjectAt } from "./lib/open-project";
 import { useAppStore } from "./stores/useAppStore";
 import { applyTheme } from "./lib/theme";
+import { DEFAULT_EDITOR_PREFS } from "./stores/useAppStore";
 
 /**
- * On the very first launch, drop the user into the bundled guide rather than an
- * empty window — it doubles as the documentation and as a real project to try
- * the editor on. Marked done in settings afterwards, so it happens once.
+ * Push saved preferences into the store on launch.
+ *
+ * The editor reads these from the store rather than from the settings file, so
+ * a change in Settings takes effect immediately instead of at next launch.
  */
-async function openGuideOnFirstRun(): Promise<void> {
-  const settings = await loadSettings();
+function applyPreferences(settings: Awaited<ReturnType<typeof loadSettings>>): void {
   applyTheme(settings.theme === "light" ? "light" : "dark");
 
-  if (settings.firstRunCompleted) return;
-
-  // Record the attempt before opening. If something below throws, the user
-  // still gets a normal empty editor next launch instead of a failure loop.
-  await saveSettings({ ...settings, firstRunCompleted: true });
-
-  const dir = await ensureSampleProject();
-  const project = await openProject(dir);
-
   const store = useAppStore.getState();
-  store.setProjectPath(project.root);
-  store.setFiles(project.files);
-
-  const mainPath = `${dir}/main.tex`;
-  store.setActiveFile(mainPath);
-  store.setActiveFileContent(await readFile(mainPath));
+  store.setEditorPrefs({
+    fontSize: settings.editorFontSize ?? DEFAULT_EDITOR_PREFS.fontSize,
+    lineHeight: settings.editorLineHeight ?? DEFAULT_EDITOR_PREFS.lineHeight,
+    tabSize: settings.editorTabSize ?? DEFAULT_EDITOR_PREFS.tabSize,
+    wordWrap: settings.editorWordWrap ?? DEFAULT_EDITOR_PREFS.wordWrap,
+    lineNumbers: settings.editorLineNumbers ?? DEFAULT_EDITOR_PREFS.lineNumbers,
+    minimap: settings.editorMinimap ?? DEFAULT_EDITOR_PREFS.minimap,
+    autosaveDelayMs: settings.autosaveDelayMs ?? DEFAULT_EDITOR_PREFS.autosaveDelayMs,
+  });
+  if (settings.defaultCompiler) store.setSelectedCompiler(settings.defaultCompiler);
+  store.setAutoCompile(settings.autoCompile ?? false);
 }
 
 function App() {
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [openingTutorial, setOpeningTutorial] = useState(false);
+
   useEffect(() => {
     // Outside Tauri (browser dev) every command rejects; fall back to a themed
     // but otherwise empty editor rather than leaving the app unstyled.
-    openGuideOnFirstRun().catch(() => applyTheme("dark"));
+    (async () => {
+      const settings = await loadSettings();
+      applyPreferences(settings);
+
+      if (settings.firstRunCompleted) return;
+
+      // Write the sample projects out regardless, so Settings can offer them
+      // even if the welcome dialog is dismissed.
+      await ensureSampleProject().catch(() => {});
+
+      if (settings.offerTutorialOnLaunch ?? true) setShowWelcome(true);
+    })().catch(() => applyTheme("dark"));
   }, []);
 
-  return <MainLayout />;
+  /** Record that first run is done, whichever button was pressed. */
+  const completeFirstRun = useCallback(async () => {
+    const settings = await loadSettings();
+    await saveSettings({ ...settings, firstRunCompleted: true });
+  }, []);
+
+  const handleStartTutorial = useCallback(async () => {
+    setOpeningTutorial(true);
+    try {
+      // Not `fresh`: on first launch there is nothing to reset, and a stray
+      // reset would move aside a folder the user may already have opened.
+      const dir = await openTutorial(false);
+      await openProjectAt(dir, "main.tex");
+      await completeFirstRun();
+      setShowWelcome(false);
+    } catch {
+      setOpeningTutorial(false);
+    }
+  }, [completeFirstRun]);
+
+  const handleSkip = useCallback(async () => {
+    await completeFirstRun().catch(() => {});
+    setShowWelcome(false);
+  }, [completeFirstRun]);
+
+  return (
+    <>
+      <MainLayout />
+      {showWelcome && (
+        <WelcomeDialog
+          onStartTutorial={handleStartTutorial}
+          onSkip={handleSkip}
+          busy={openingTutorial}
+        />
+      )}
+    </>
+  );
 }
 
 export default App;

@@ -125,6 +125,19 @@ export interface AppSettings {
   mcpPort: number;
   firstRunCompleted?: boolean;
   reduceReasoning?: boolean;
+  editorFontSize: number;
+  editorLineHeight: number;
+  editorTabSize: number;
+  editorWordWrap: boolean;
+  editorLineNumbers: boolean;
+  editorMinimap: boolean;
+  /** Autosave debounce in ms. 0 disables autosave. */
+  autosaveDelayMs: number;
+  /** Empty means "first compiler found". */
+  defaultCompiler: string;
+  /** "fit-width" | "fit-page" | a percentage, e.g. "120". */
+  defaultPreviewZoom: string;
+  offerTutorialOnLaunch: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -138,4 +151,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mcpPort: 9876,
   firstRunCompleted: false,
   reduceReasoning: true,
+  editorFontSize: 14,
+  editorLineHeight: 22,
+  editorTabSize: 2,
+  editorWordWrap: true,
+  editorLineNumbers: true,
+  editorMinimap: false,
+  autosaveDelayMs: 1000,
+  defaultCompiler: "",
+  defaultPreviewZoom: "fit-width",
+  offerTutorialOnLaunch: true,
 };

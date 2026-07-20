@@ -3,7 +3,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { RenderParameters } from "pdfjs-dist/types/src/display/api";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useAppStore } from "../../stores/useAppStore";
-import { readPdf } from "../../hooks/useTauriCommands";
+import { readPdf, loadSettings } from "../../hooks/useTauriCommands";
 import { Icon } from "../icons";
 
 // Bundled worker, not a CDN one: the app must work offline, and pdf.js refuses
@@ -56,6 +56,21 @@ export default function PDFPreview() {
   const hovering = useRef(false);
   /** Scroll position to restore after a cursor-anchored zoom. */
   const anchorRef = useRef<{ x: number; y: number; ratio: number } | null>(null);
+
+  // Honour the saved default zoom on mount. Read once: changing it in Settings
+  // is a statement about how the next document should open, not a command to
+  // yank the zoom out from under someone mid-read.
+  useEffect(() => {
+    loadSettings()
+      .then((s) => {
+        const pref = s.defaultPreviewZoom;
+        if (!pref || pref === "fit-width") return setFitMode("width");
+        if (pref === "fit-page") return setFitMode("page");
+        const percent = Number(pref);
+        if (!Number.isNaN(percent) && percent > 0) setScale(clamp(percent / 100));
+      })
+      .catch(() => {});
+  }, []);
 
   const loadPdf = useCallback(async (path: string) => {
     setLoading(true);

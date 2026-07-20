@@ -2,6 +2,27 @@ import { create } from "zustand";
 import type { EditorSelection } from "../components/editor/editor-bridge";
 import type { FileEntry, LaTeXError } from "../types";
 
+export interface EditorPrefs {
+  fontSize: number;
+  lineHeight: number;
+  tabSize: number;
+  wordWrap: boolean;
+  lineNumbers: boolean;
+  minimap: boolean;
+  /** Autosave debounce in ms; 0 disables autosave. */
+  autosaveDelayMs: number;
+}
+
+export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
+  fontSize: 14,
+  lineHeight: 22,
+  tabSize: 2,
+  wordWrap: true,
+  lineNumbers: true,
+  minimap: false,
+  autosaveDelayMs: 1000,
+};
+
 interface AppStore {
   // Mirrors the Monaco selection so panels can act on what the user highlighted
   // instead of falling back to the whole file.
@@ -28,6 +49,11 @@ interface AppStore {
   selectedCompiler: string;
   expandedDirs: Set<string>;
   autoCompile: boolean;
+  /**
+   * Editor preferences, mirrored from settings so the editor can react without
+   * every component re-reading the settings file.
+   */
+  editorPrefs: EditorPrefs;
 
   setProjectPath: (path: string | null) => void;
   setFiles: (files: FileEntry[]) => void;
@@ -43,6 +69,7 @@ interface AppStore {
   setIsCompiling: (compiling: boolean) => void;
   setCompilers: (compilers: string[]) => void;
   setSelectedCompiler: (compiler: string) => void;
+  setEditorPrefs: (prefs: Partial<EditorPrefs>) => void;
   toggleDir: (path: string) => void;
   setAutoCompile: (auto: boolean) => void;
 }
@@ -68,6 +95,7 @@ export const useAppStore = create<AppStore>((set) => ({
   selectedCompiler: "",
   expandedDirs: new Set<string>(),
   autoCompile: false,
+  editorPrefs: DEFAULT_EDITOR_PREFS,
 
   setProjectPath: (path) => set({ projectPath: path }),
   setFiles: (files) => set({ files }),
@@ -87,6 +115,8 @@ export const useAppStore = create<AppStore>((set) => ({
   setIsCompiling: (compiling) => set({ isCompiling: compiling }),
   setCompilers: (compilers) => set({ compilers, compilersChecked: true }),
   setSelectedCompiler: (compiler) => set({ selectedCompiler: compiler }),
+  setEditorPrefs: (prefs) =>
+    set((state) => ({ editorPrefs: { ...state.editorPrefs, ...prefs } })),
   toggleDir: (path) =>
     set((state) => {
       const next = new Set(state.expandedDirs);

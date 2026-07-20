@@ -59,6 +59,8 @@ pub fn run() {
             ai_stream::call_ai_stream,
             ai_stream::cancel_ai,
             sample::ensure_sample_project,
+            sample::open_tutorial,
+            sample::open_guide,
             settings::load_settings,
             settings::save_settings,
             features::git_status,

@@ -10,6 +10,8 @@ import TemplateGallery from "../templates/TemplateGallery";
 import AISkillsPanel from "../ai-skills/AISkillsPanel";
 import PluginManager from "../plugin-manager/PluginManager";
 import SettingsPanel from "../settings/SettingsPanel";
+import { openTutorial, openGuide } from "../../hooks/useTauriCommands";
+import { openProjectAt } from "../../lib/open-project";
 import GitPanel from "../git/GitPanel";
 import OutlinePanel from "../outline/OutlinePanel";
 import CommandPalette, { type PaletteHandlers } from "../palette/CommandPalette";
@@ -164,6 +166,15 @@ export default function MainLayout() {
       showComponents: () => { setShowLeftPanel(true); setLeftPanel("components"); },
       showSettings: () => setShowSettings(true),
       showPlugins: () => setShowPlugins(true),
+      openTutorial: () => {
+        openTutorial(false).then((dir) => openProjectAt(dir, "main.tex"));
+      },
+      restartTutorial: () => {
+        openTutorial(true).then((dir) => openProjectAt(dir, "main.tex"));
+      },
+      openGuide: () => {
+        openGuide().then((dir) => openProjectAt(dir, "main.tex"));
+      },
     }),
     []
   );

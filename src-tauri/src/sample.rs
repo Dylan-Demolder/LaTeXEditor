@@ -112,6 +112,51 @@ pub async fn ensure_sample_project(app: tauri::AppHandle) -> Result<String, Stri
     Ok(tutorial.to_string_lossy().to_string())
 }
 
+/// Open the tutorial again, at any time.
+///
+/// `fresh` restores the pristine copy. Someone coming back to the tutorial has
+/// usually half-finished it — the paragraphs rewritten, step 7's line
+/// uncommented — and "run it again" on top of that is not a tutorial. The
+/// previous copy is moved aside rather than deleted, because the user may have
+/// written something of their own into it.
+#[tauri::command]
+pub async fn open_tutorial(app: tauri::AppHandle, fresh: bool) -> Result<String, String> {
+    let documents = documents_dir(&app)?;
+    let tutorial = documents.join(TUTORIAL_DIR_NAME);
+
+    if fresh && tutorial.exists() {
+        let backup = next_backup_path(&documents);
+        fs::rename(&tutorial, &backup)
+            .await
+            .map_err(|e| format!("Could not set the old tutorial aside: {}", e))?;
+    }
+
+    materialise(&tutorial, TUTORIAL_FILES).await?;
+    Ok(tutorial.to_string_lossy().to_string())
+}
+
+/// A free `LaTeXEditor Tutorial (previous N)` beside the tutorial.
+///
+/// Numbered rather than timestamped so a second reset does not silently
+/// overwrite the first one's backup.
+fn next_backup_path(documents: &std::path::Path) -> PathBuf {
+    for n in 1..1000 {
+        let candidate = documents.join(format!("{} (previous {})", TUTORIAL_DIR_NAME, n));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    documents.join(format!("{} (previous)", TUTORIAL_DIR_NAME))
+}
+
+/// Where the reference guide lives, materialising it if it is missing.
+#[tauri::command]
+pub async fn open_guide(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = documents_dir(&app)?.join(DIR_NAME);
+    materialise(&dir, FILES).await?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

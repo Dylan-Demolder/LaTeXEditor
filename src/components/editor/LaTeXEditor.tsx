@@ -27,8 +27,14 @@ interface Props {
 }
 
 export default function LaTeXEditor({ onCompile, saveRef }: Props) {
-  const { activeFilePath, activeFileContent, setActiveFileContent, setIsDirty, autoCompile } =
-    useAppStore();
+  const {
+    activeFilePath,
+    activeFileContent,
+    setActiveFileContent,
+    setIsDirty,
+    autoCompile,
+    editorPrefs,
+  } = useAppStore();
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const selectionSubRef = useRef<Monaco.IDisposable | null>(null);
@@ -212,9 +218,15 @@ export default function LaTeXEditor({ onCompile, saveRef }: Props) {
       setIsDirty(true);
 
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => doSave(content), 1000);
+      // 0 means the user has turned autosave off and will press Cmd+S.
+      if (editorPrefs.autosaveDelayMs > 0) {
+        saveTimeoutRef.current = setTimeout(
+          () => doSave(content),
+          editorPrefs.autosaveDelayMs
+        );
+      }
     },
-    [setActiveFileContent, setIsDirty, doSave]
+    [setActiveFileContent, setIsDirty, doSave, editorPrefs.autosaveDelayMs]
   );
 
   return (
@@ -241,18 +253,18 @@ export default function LaTeXEditor({ onCompile, saveRef }: Props) {
           onChange={handleChange}
           onMount={handleMount}
           options={{
-            minimap: { enabled: false },
-            fontSize: 14,
-            lineHeight: 22,
+            minimap: { enabled: editorPrefs.minimap },
+            fontSize: editorPrefs.fontSize,
+            lineHeight: editorPrefs.lineHeight,
             padding: { top: 12, bottom: 12 },
             renderLineHighlight: "line",
             smoothScrolling: true,
             cursorBlinking: "smooth",
-            lineNumbers: "on",
-            wordWrap: "on",
+            lineNumbers: editorPrefs.lineNumbers ? "on" : "off",
+            wordWrap: editorPrefs.wordWrap ? "on" : "off",
             scrollBeyondLastLine: false,
             automaticLayout: true,
-            tabSize: 2,
+            tabSize: editorPrefs.tabSize,
             bracketPairColorization: { enabled: true },
             matchBrackets: "always",
             autoClosingBrackets: "always",

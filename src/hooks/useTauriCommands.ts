@@ -198,6 +198,19 @@ export interface AppSettings {
   mcpPort: number;
   firstRunCompleted?: boolean;
   reduceReasoning?: boolean;
+  editorFontSize: number;
+  editorLineHeight: number;
+  editorTabSize: number;
+  editorWordWrap: boolean;
+  editorLineNumbers: boolean;
+  editorMinimap: boolean;
+  /** Autosave debounce in ms. 0 disables autosave. */
+  autosaveDelayMs: number;
+  /** Empty means "first compiler found". */
+  defaultCompiler: string;
+  /** "fit-width" | "fit-page" | a percentage, e.g. "120". */
+  defaultPreviewZoom: string;
+  offerTutorialOnLaunch: boolean;
 }
 
 export async function loadSettings(): Promise<AppSettings> {
@@ -273,4 +286,18 @@ export async function findRootFile(projectPath: string): Promise<string> {
 
 export async function getDependencies(texPath: string): Promise<any[]> {
   return invoke("get_dependencies", { texPath });
+}
+
+/**
+ * Re-open the bundled tutorial. `fresh` sets the current copy aside and
+ * restores the pristine one — someone returning to the tutorial has usually
+ * half-finished it, and continuing on top of that is not a tutorial.
+ */
+export async function openTutorial(fresh: boolean): Promise<string> {
+  return invoke<string>("open_tutorial", { fresh });
+}
+
+/** Path to the reference guide, materialising it if it has been deleted. */
+export async function openGuide(): Promise<string> {
+  return invoke<string>("open_guide");
 }

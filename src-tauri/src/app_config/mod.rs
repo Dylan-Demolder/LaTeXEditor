@@ -28,6 +28,61 @@ pub struct AppSettings {
     /// passages where thinking costs multiples of the latency for the same edit.
     #[serde(rename = "reduceReasoning", default = "default_reduce_reasoning")]
     pub reduce_reasoning: bool,
+
+    // ---- Editor -------------------------------------------------------
+    #[serde(rename = "editorFontSize", default = "default_font_size")]
+    pub editor_font_size: u16,
+    #[serde(rename = "editorLineHeight", default = "default_line_height")]
+    pub editor_line_height: u16,
+    #[serde(rename = "editorTabSize", default = "default_tab_size")]
+    pub editor_tab_size: u16,
+    #[serde(rename = "editorWordWrap", default = "default_true")]
+    pub editor_word_wrap: bool,
+    #[serde(rename = "editorLineNumbers", default = "default_true")]
+    pub editor_line_numbers: bool,
+    #[serde(rename = "editorMinimap", default)]
+    pub editor_minimap: bool,
+    /// Autosave debounce. 0 disables autosave entirely, for people who would
+    /// rather decide for themselves when a file is written.
+    #[serde(rename = "autosaveDelayMs", default = "default_autosave_delay")]
+    pub autosave_delay_ms: u32,
+
+    // ---- Compilation --------------------------------------------------
+    /// Empty means "first one found", which is what the app did before this
+    /// was configurable.
+    #[serde(rename = "defaultCompiler", default)]
+    pub default_compiler: String,
+
+    // ---- Preview ------------------------------------------------------
+    /// "fit-width" | "fit-page" | a percentage as a string, e.g. "120".
+    #[serde(rename = "defaultPreviewZoom", default = "default_preview_zoom")]
+    pub default_preview_zoom: String,
+
+    // ---- Onboarding ---------------------------------------------------
+    /// Offer the tutorial on launch. Separate from `first_run_completed` so
+    /// someone can deliberately turn the offer back on without the app
+    /// treating them as a brand-new user.
+    #[serde(rename = "offerTutorialOnLaunch", default = "default_true")]
+    pub offer_tutorial_on_launch: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_font_size() -> u16 {
+    14
+}
+fn default_line_height() -> u16 {
+    22
+}
+fn default_tab_size() -> u16 {
+    2
+}
+fn default_autosave_delay() -> u32 {
+    1000
+}
+fn default_preview_zoom() -> String {
+    "fit-width".to_string()
 }
 
 fn default_reduce_reasoning() -> bool {
@@ -66,6 +121,16 @@ impl Default for AppSettings {
             mcp_port: default_mcp_port(),
             first_run_completed: false,
             reduce_reasoning: default_reduce_reasoning(),
+            editor_font_size: default_font_size(),
+            editor_line_height: default_line_height(),
+            editor_tab_size: default_tab_size(),
+            editor_word_wrap: true,
+            editor_line_numbers: true,
+            editor_minimap: false,
+            autosave_delay_ms: default_autosave_delay(),
+            default_compiler: String::new(),
+            default_preview_zoom: default_preview_zoom(),
+            offer_tutorial_on_launch: true,
         }
     }
 }
@@ -92,6 +157,60 @@ pub async fn load_settings() -> Result<AppSettings, String> {
             .map_err(|e| format!("Failed to parse settings: {}", e))
     } else {
         Ok(AppSettings::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every field carries a serde default, so a settings file written by an
+    /// older build must still load — losing someone's API keys because a new
+    /// preference was added would be an unforgivable upgrade.
+    #[test]
+    fn settings_from_an_older_build_still_load() {
+        let old = r#"{
+            "activeProvider": "opencode-go",
+            "activeModel": "deepseek-v4-flash",
+            "apiKeys": { "opencode-go": "test-key" },
+            "temperature": 0.7,
+            "maxTokens": 16384,
+            "theme": "light",
+            "autocompile": true,
+            "mcpPort": 9876,
+            "firstRunCompleted": true
+        }"#;
+
+        let parsed: AppSettings = serde_json::from_str(old).expect("old settings must parse");
+        assert_eq!(parsed.active_provider, "opencode-go");
+        assert_eq!(parsed.api_keys.get("opencode-go").unwrap(), "test-key");
+        assert!(parsed.first_run_completed);
+        // Fields the old file never had come back as their defaults.
+        assert_eq!(parsed.editor_font_size, 14);
+        assert!(parsed.editor_word_wrap);
+        assert_eq!(parsed.autosave_delay_ms, 1000);
+        assert_eq!(parsed.default_preview_zoom, "fit-width");
+        assert!(parsed.offer_tutorial_on_launch);
+    }
+
+    /// An empty file is a real state — it is what a corrupted or truncated
+    /// write leaves behind, and it must not wedge the app.
+    #[test]
+    fn an_empty_object_yields_defaults() {
+        let parsed: AppSettings = serde_json::from_str("{}").expect("empty object must parse");
+        assert_eq!(parsed.active_provider, default_active_provider());
+        assert_eq!(parsed.editor_tab_size, 2);
+    }
+
+    #[test]
+    fn round_trips_through_json() {
+        let mut settings = AppSettings::default();
+        settings.editor_font_size = 18;
+        settings.default_compiler = "xelatex".to_string();
+        let text = serde_json::to_string(&settings).unwrap();
+        let back: AppSettings = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.editor_font_size, 18);
+        assert_eq!(back.default_compiler, "xelatex");
     }
 }
 
