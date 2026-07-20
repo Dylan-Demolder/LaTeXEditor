@@ -1,0 +1,117 @@
+% ============================================================
+%  The LaTeXEditor Guide
+%
+%  This document is written about the editor, in the editor.
+%  Open the enclosing folder with "Open project" and press
+%  Typeset (Cmd+Enter) to build it.
+%
+%  Note: the editor runs a SINGLE compiler pass, so press
+%  Typeset twice the first time — the table of contents and
+%  cross-references need the .aux file from the first run.
+%
+%  Packages used are deliberately limited to ones present in
+%  essentially every LaTeX installation, so this compiles on a
+%  minimal TeX Live/MiKTeX as well as a full one.
+% ============================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.6cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+
+% parskip's job, done with core LaTeX so no package is needed.
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+
+% ---- Colours picked to match the editor's own palette -------
+\definecolor{accent}{HTML}{A85A2C}
+\definecolor{codebg}{HTML}{F4F0E6}
+\definecolor{codekw}{HTML}{A85A2C}
+\definecolor{codecmt}{HTML}{8D8373}
+
+% ---- A listing style for LaTeX snippets ---------------------
+% No escapechar: everything inside a listing is taken literally,
+% which is what you want when the samples are themselves LaTeX.
+\lstdefinestyle{tex}{
+  language=[LaTeX]TeX,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecmt}\itshape,
+  stringstyle=\color{black},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codecmt!40},
+  framesep=6pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+}
+\lstset{style=tex}
+
+% A shorthand for naming UI elements consistently.
+\newcommand{\ui}[1]{\textsf{\textbf{#1}}}
+\newcommand{\kbd}[1]{\texttt{#1}}
+
+\title{\textbf{LaTeXEditor}\\[0.3em]
+       \large A guide to writing, typesetting and revising with it}
+\author{Project documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+LaTeXEditor is a desktop LaTeX environment: a bundled Monaco editor with a
+LaTeX grammar, a local typesetting toolchain, a PDF preview, Git integration,
+and an AI assistant that edits your document rather than merely describing
+changes. This guide explains what each part does and works through the tasks
+you will actually perform --- opening a project, typesetting, reading errors,
+and using AI on a selection. It is itself a LaTeXEditor project, so you can
+open this folder and typeset it as your first exercise.
+\end{abstract}
+
+\tableofcontents
+
+\input{sections/01-overview}
+\input{sections/02-getting-started}
+\input{sections/03-writing}
+\input{sections/04-ai-assistant}
+\input{sections/05-integrations}
+\input{sections/06-reference}
+
+% The editor runs one compiler pass, so a \bibliography{refs} call
+% would never resolve — BibTeX is a separate program the app does not
+% invoke. An inline bibliography resolves in the same single pass.
+% refs.bib ships alongside anyway: the AI assistant reads it to learn
+% your real citation keys (see Section 4).
+\begin{thebibliography}{9}
+
+\bibitem{knuth1984}
+Donald E. Knuth.
+\emph{The \TeX book}.
+Addison--Wesley, 1984.
+
+\bibitem{lamport1994}
+Leslie Lamport.
+\emph{\LaTeX: A Document Preparation System}.
+2nd edition. Addison--Wesley, 1994.
+
+\bibitem{mittelbach2004}
+Frank Mittelbach and Michel Goossens.
+\emph{The \LaTeX\ Companion}.
+2nd edition. Addison--Wesley, 2004.
+
+\end{thebibliography}
+
+\end{document}

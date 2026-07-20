@@ -30,7 +30,7 @@ export default function GitPanel() {
 
   if (!projectPath) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500 text-xs">
+      <div className="h-full flex items-center justify-center text-ink-3 text-tiny">
         Open a project to use Git
       </div>
     );
@@ -38,9 +38,9 @@ export default function GitPanel() {
 
   if (!info?.is_repo) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-500 text-xs p-4">
+      <div className="h-full flex flex-col items-center justify-center gap-3 text-ink-3 text-tiny p-4">
         <span>Not a git repository</span>
-        <button onClick={async () => { await gitInit(projectPath); refresh(); }} className="px-3 py-1 bg-blue-600 text-white rounded text-xs">
+        <button onClick={async () => { await gitInit(projectPath); refresh(); }} className="px-3 py-1 bg-accent text-accent-fg rounded text-tiny">
           Initialize Git Repository
         </button>
       </div>
@@ -51,48 +51,49 @@ export default function GitPanel() {
   const hasChanges = (status?.modified?.length || 0) + (status?.untracked?.length || 0) + (status?.staged?.length || 0) > 0;
 
   return (
-    <div className="h-full flex flex-col bg-gray-850 overflow-hidden">
-      <div className="px-3 py-1.5 bg-gray-800 border-b border-gray-700 text-gray-300 text-xs font-medium">Git</div>
+    <div className="h-full flex flex-col bg-base overflow-hidden">
+      <div className="flex items-center pl-3 pr-1.5 h-8 shrink-0 border-b border-edge">
+        <span className="panel-label">Git</span></div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-gray-500">Branch:</span>
-          <span className="text-green-400 font-mono">{status?.branch || "main"}</span>
-          {status?.ahead > 0 && <span className="text-yellow-400">↑{status.ahead}</span>}
-          {status?.behind > 0 && <span className="text-yellow-400">↓{status.behind}</span>}
+        <div className="flex items-center gap-2 text-tiny">
+          <span className="text-ink-3">Branch:</span>
+          <span className="text-success font-mono">{status?.branch || "main"}</span>
+          {status?.ahead > 0 && <span className="text-warning">↑{status.ahead}</span>}
+          {status?.behind > 0 && <span className="text-warning">↓{status.behind}</span>}
         </div>
 
         <div className="space-y-1">
-          <div className="text-xs text-gray-500 font-medium">Staged ({status?.staged?.length || 0})</div>
-          {status?.staged?.map((f: string) => <div key={f} className="text-xs text-green-400 font-mono truncate pl-2">{f}</div>)}
-          <div className="text-xs text-gray-500 font-medium mt-2">Modified ({status?.modified?.length || 0})</div>
-          {status?.modified?.map((f: string) => <div key={f} className="text-xs text-yellow-400 font-mono truncate pl-2">{f}</div>)}
-          <div className="text-xs text-gray-500 font-medium mt-2">Untracked ({status?.untracked?.length || 0})</div>
-          {status?.untracked?.map((f: string) => <div key={f} className="text-xs text-red-400 font-mono truncate pl-2">{f}</div>)}
+          <div className="text-tiny text-ink-3 font-medium">Staged ({status?.staged?.length || 0})</div>
+          {status?.staged?.map((f: string) => <div key={f} className="text-tiny text-success font-mono truncate pl-2">{f}</div>)}
+          <div className="text-tiny text-ink-3 font-medium mt-2">Modified ({status?.modified?.length || 0})</div>
+          {status?.modified?.map((f: string) => <div key={f} className="text-tiny text-warning font-mono truncate pl-2">{f}</div>)}
+          <div className="text-tiny text-ink-3 font-medium mt-2">Untracked ({status?.untracked?.length || 0})</div>
+          {status?.untracked?.map((f: string) => <div key={f} className="text-tiny text-danger font-mono truncate pl-2">{f}</div>)}
         </div>
 
-        <div className="space-y-2 pt-2 border-t border-gray-700">
+        <div className="space-y-2 pt-2 border-t border-edge">
           <div className="flex gap-1 flex-wrap">
-            {hasChanges && <button onClick={async () => { await gitAdd(projectPath, []); refresh(); }} className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded">Stage All</button>}
-            <button onClick={async () => { await gitPush(projectPath); refresh(); }} className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded">Push</button>
-            <button onClick={async () => { await gitPull(projectPath); refresh(); }} className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded">Pull</button>
+            {hasChanges && <button onClick={async () => { await gitAdd(projectPath, []); refresh(); }} className="px-2 py-1 text-tiny bg-hover hover:bg-edge-strong text-ink rounded">Stage All</button>}
+            <button onClick={async () => { await gitPush(projectPath); refresh(); }} className="px-2 py-1 text-tiny bg-hover hover:bg-edge-strong text-ink rounded">Push</button>
+            <button onClick={async () => { await gitPull(projectPath); refresh(); }} className="px-2 py-1 text-tiny bg-hover hover:bg-edge-strong text-ink rounded">Pull</button>
           </div>
 
           <div className="space-y-1">
             <textarea value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Commit message..."
-              rows={2} className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600 resize-none" />
+              rows={2} className="w-full bg-hover text-ink text-tiny px-2 py-1 rounded border border-edge-strong resize-none" />
             <button onClick={async () => { await gitCommit(projectPath, commitMessage); setCommitMessage(""); refresh(); }}
               disabled={!commitMessage}
-              className={`w-full px-2 py-1 text-xs rounded ${commitMessage ? "bg-green-700 hover:bg-green-600 text-white" : "bg-gray-700 text-gray-500"}`}>
+              className={`w-full px-2 py-1 text-tiny rounded ${commitMessage ? "bg-success hover:bg-success/80 text-accent-fg" : "bg-hover text-ink-3"}`}>
               Commit
             </button>
           </div>
         </div>
 
-        <div className="pt-2 border-t border-gray-700">
-          <div className="text-xs text-gray-500 font-medium mb-1">Recent Commits</div>
+        <div className="pt-2 border-t border-edge">
+          <div className="text-tiny text-ink-3 font-medium mb-1">Recent Commits</div>
           {info.commits?.slice(0, 10).map((c: any) => (
-            <div key={c.hash} className="text-xs text-gray-400 font-mono flex gap-2 py-0.5">
-              <span className="text-yellow-500">{c.hash.slice(0, 7)}</span>
+            <div key={c.hash} className="text-tiny text-ink-2 font-mono flex gap-2 py-0.5">
+              <span className="text-warning">{c.hash.slice(0, 7)}</span>
               <span className="truncate">{c.message}</span>
             </div>
           ))}
@@ -101,17 +102,17 @@ export default function GitPanel() {
         {activeFilePath && (
           <button onClick={async () => {
             const d = await gitDiffCmd(projectPath, activeFilePath); setDiff(d);
-          }} className="w-full px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded">
+          }} className="w-full px-2 py-1 text-tiny bg-hover hover:bg-edge-strong text-ink rounded">
             View Diff
           </button>
         )}
 
         {diff && (
-          <div className="bg-gray-900 rounded p-2 font-mono text-xs max-h-60 overflow-auto">
+          <div className="bg-sunken rounded p-2 font-mono text-tiny max-h-60 overflow-auto">
             {diff.hunks?.map((h: any, hi: number) => (
               <div key={hi}>
                 {h.lines?.map((l: any, li: number) => (
-                  <div key={li} className={l.origin === "+" ? "text-green-400" : l.origin === "-" ? "text-red-400" : "text-gray-500"}>
+                  <div key={li} className={l.origin === "+" ? "text-success" : l.origin === "-" ? "text-danger" : "text-ink-3"}>
                     {l.origin} {l.content}
                   </div>
                 ))}

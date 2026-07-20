@@ -1,0 +1,85 @@
+\section{What the editor is}
+\label{sec:overview}
+
+LaTeXEditor is a desktop application. It does not upload your documents
+anywhere, and it does not typeset in the cloud: it drives the \LaTeX{}
+distribution already installed on your machine, and everything it needs to
+render --- the code editor, the PDF viewer --- is bundled into the app rather
+than fetched from a CDN. Open it on a plane and it behaves exactly as it does
+at your desk.
+
+\subsection{The window}
+
+The layout is four regions, which this diagram shows in the positions they
+actually occupy:
+
+\begin{center}
+\setlength{\fboxsep}{6pt}
+\begin{tabular}{c}
+  \fbox{\parbox{0.82\textwidth}{\centering \textbf{Toolbar} \\ \small
+        document name \quad$\cdot$\quad compiler \quad$\cdot$\quad Typeset}} \\[4pt]
+  \begin{tabular}{@{}c@{\hspace{4pt}}c@{\hspace{4pt}}c@{}}
+    \fbox{\parbox[t][2.4cm]{0.22\textwidth}{\centering \textbf{Sidebar} \\[3pt] \small
+          Files \\ Components \\ AI \\ Git \\ Outline}} &
+    \fbox{\parbox[t][2.4cm]{0.30\textwidth}{\centering \textbf{Editor} \\[3pt] \small
+          your \texttt{.tex} source}} &
+    \fbox{\parbox[t][2.4cm]{0.24\textwidth}{\centering \textbf{Preview} \\[3pt] \small
+          the typeset PDF}} \\
+  \end{tabular} \\[4pt]
+  \fbox{\parbox{0.82\textwidth}{\centering \textbf{Issues} \\ \small
+        errors and warnings from the last run}} \\
+\end{tabular}
+\end{center}
+
+Every divider between those regions can be dragged, and the sidebar, preview
+and issues panel can each be hidden --- from the command palette, or by
+clicking the \ui{$\times$} on the issues header. The editor is given a minimum
+width that the preview is not allowed to squeeze past, so no amount of dragging
+or window-resizing can collapse the thing you are writing in.
+
+\subsection{What makes it different}
+
+Three choices are worth knowing about up front, because they shape how the rest
+of the tool behaves.
+
+\begin{description}[style=nextline, leftmargin=0pt, labelindent=0pt, labelwidth=0pt, font=\normalfont\itshape]
+
+  \item[The AI edits the document.]
+  Most editors bolt on a chat window that produces text you then copy by hand.
+  Here you press \kbd{Cmd+K} in the paragraph you want changed, say what you
+  want, and get a diff that tints the words that actually differ. Accept and it
+  is written back into exactly the range it came from.
+  Section~\ref{sec:ai} is devoted to this.
+
+  \item[It knows your project, not just your file.]
+  When the assistant generates a table, it is told which packages your preamble
+  loads; when it writes a citation, it is given the keys that actually exist in
+  your \texttt{.bib}; when it fixes an error, it is handed the error. You are
+  never asked to paste a log.
+
+  \item[It typesets locally, once.]
+  A single pass of \texttt{pdflatex} (or \texttt{xelatex}, or
+  \texttt{lualatex}) per press. This is fast and predictable, and it has one
+  consequence you must know about --- see Section~\ref{sec:passes}.
+
+\end{description}
+
+\subsection{Requirements}
+
+You need a \LaTeX{} distribution: \textbf{TeX Live} on Linux and macOS,
+\textbf{MacTeX} on macOS, or \textbf{MiKTeX} on Windows. On launch the editor
+looks for \texttt{pdflatex}, \texttt{xelatex}, \texttt{lualatex} and
+\texttt{latexmk}, and lists whichever it finds in the toolbar's compiler menu.
+
+It does not rely on your \texttt{PATH} alone, which matters more than it
+sounds: an app launched from the Dock or Finder inherits a minimal environment
+--- roughly \path{/usr/bin:/bin:/usr/sbin:/sbin} --- so a TeX installation that
+works perfectly in a terminal can be invisible to a GUI app. The editor
+therefore also checks the standard install locations directly
+(\path{/Library/TeX/texbin}, Homebrew, MacPorts, per-user \path{~/.local/bin},
+and versioned TeX Live trees) and passes the compiler's own directory down to
+it, since \texttt{latexmk} shells out to \texttt{pdflatex} in turn.
+
+If no compiler is found, the editor says so in a banner with a
+\ui{Re-check} button --- install a distribution and press it, no restart
+needed. Editing works regardless; only typesetting is blocked.

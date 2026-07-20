@@ -1,0 +1,133 @@
+\section{Version control, agents and plugins}
+\label{sec:integrations}
+
+\subsection{Git}
+
+The \ui{Git} panel covers the day-to-day loop without leaving the editor: it
+shows the current branch, how far ahead or behind you are, and your staged,
+modified and untracked files. You can stage everything, write a message and
+commit, push, pull, and view the diff of the file you are editing. If the
+folder is not a repository yet, the panel offers to initialise one.
+
+It is deliberately not a full Git client. Rebases, conflict resolution and
+history surgery belong in a terminal or a dedicated tool. What is here is what
+you want between paragraphs.
+
+A \LaTeX{}-specific note: commit your sources, not your output. A
+\texttt{.gitignore} containing
+
+\begin{lstlisting}
+build/
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+\end{lstlisting}
+
+keeps regenerable files out of your history. Since the editor writes all output
+to \texttt{build/}, the first line does most of the work.
+
+\subsection{The MCP server}
+
+The editor runs a small Model Context Protocol server on
+\texttt{127.0.0.1:9876}. Its purpose is to let an external coding agent see and
+act on the project you have open --- useful when you want something more
+open-ended than a single skill, such as restructuring a document across several
+files.
+
+It exposes six tools:
+
+\begin{table}[htbp]
+  \centering
+  \caption{MCP tools}
+  \label{tab:mcp}
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Tool} & \textbf{Purpose} \\
+    \midrule
+    \texttt{read\_file}             & read a file from the project \\
+    \texttt{write\_file}            & write or overwrite a file \\
+    \texttt{compile}                & typeset and return errors and warnings \\
+    \texttt{get\_errors}            & parse a \texttt{.log} for its errors \\
+    \texttt{get\_project\_structure} & return the file tree \\
+    \texttt{get\_section\_structure} & extract headings from a file \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The indicator at the top of the \ui{AI} panel reports whether the server
+actually bound its port. If it reads \emph{not running}, something else is
+using 9876; nothing else in the editor is affected.
+
+\subsubsection*{Connecting an agent}
+
+The server speaks JSON-RPC over HTTP. Any MCP client can point at it; for
+Claude Code, add it as an HTTP server:
+
+\begin{lstlisting}
+claude mcp add --transport http latex http://127.0.0.1:9876/mcp
+\end{lstlisting}
+
+To check it by hand before wiring anything up, ask it what it can do:
+
+\begin{lstlisting}
+curl -s http://127.0.0.1:9876/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+\end{lstlisting}
+
+The project the editor currently has open is what the tools operate on --- the
+app pushes the open project and active file to the server as you work, so an
+agent always sees what you see.
+
+\subsubsection*{Skills or agent?}
+
+The two AI surfaces are for different shapes of work, and it is worth being
+deliberate about which you reach for.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Choosing between the panel and an external agent}
+  \label{tab:ai-surfaces}
+  \begin{tabular}{p{0.44\textwidth}p{0.44\textwidth}}
+    \toprule
+    \textbf{AI Skills panel} & \textbf{External agent over MCP} \\
+    \midrule
+    One passage, one task, one diff you approve.
+      & Many files, several steps, its own plan. \\[3pt]
+    You see exactly what is sent and exactly what changes.
+      & It reads and writes on its own; review with \texttt{git diff}. \\[3pt]
+    Right for: proofreading, fixing an error, generating a table.
+      & Right for: restructuring a document, renaming a label everywhere,
+        splitting a chapter. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Because \texttt{write\_file} overwrites without asking, commit before letting an
+agent loose --- then the review is a diff rather than an act of faith.
+
+Two cautions. The server is bound to localhost and unauthenticated: anything
+able to reach that port can read and write the open project, so do not forward
+it off the machine. And \texttt{write\_file} overwrites without asking, so
+prefer to have an agent work on a project that is committed to Git.
+
+\subsection{Plugins}
+
+Plugins are loaded from \texttt{\textasciitilde/.latex-editor/plugins/}, each a
+folder with a \texttt{plugin.json} manifest and an entry point. The
+\ui{Plugins} dialog lists what is installed and lets you inspect each one's
+manifest and source.
+
+Being straight about the current state: plugins are \emph{listed and
+inspectable, but not yet executed}. The manager is a viewer. Two samples ship
+in the repository's \texttt{plugins/} folder to show the intended manifest
+shape --- treat the system as a preview of an interface rather than a working
+extension point.
+
+\subsection{SyncTeX}
+
+The backend can map a source line to a PDF page and back. It is not yet wired
+to a click in the preview, so there is no jump-to-source today. The groundwork
+is done; the gesture is not.

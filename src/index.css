@@ -1,9 +1,154 @@
 @import "tailwindcss";
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* ─────────────────────────────────────────────────────────────
+   Warm editorial palette.
+
+   This is a writing tool, so the neutrals carry a slight warmth
+   rather than the usual blue-grey IDE cast, and the accent is a
+   terracotta that reads as ink-on-paper instead of "system blue".
+
+   Every colour is a semantic token defined twice — once here for
+   dark, once under [data-theme="light"]. Components never name a
+   raw colour, so switching themes is a variable swap.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces, from furthest back to closest to the reader. */
+  --surface-sunken: #100e0b;
+  --surface-base: #16130f;
+  --surface-raised: #1e1a15;
+  --surface-overlay: #26211b;
+  --surface-hover: #2c261f;
+
+  --border: #302a22;
+  --border-strong: #453d32;
+
+  --text-primary: #ece5d9;
+  --text-secondary: #a99f90;
+  --text-muted: #776e61;
+
+  /* Terracotta — active states, focus, the primary action. */
+  --accent: #c4713f;
+  --accent-hover: #d5834f;
+  --accent-subtle: #c4713f26;
+  --accent-fg: #1a1309;
+
+  --danger: #d2504b;
+  --danger-subtle: #d2504b1f;
+  --warning: #d4a037;
+  --warning-subtle: #d4a0371f;
+  --success: #6b9e5e;
+  --success-subtle: #6b9e5e1f;
+  --info: #5e86a8;
+
+  /* Diff colours, kept distinct from status colours. */
+  --diff-add: #7fae6d;
+  --diff-add-bg: #6b9e5e14;
+  --diff-remove: #d2726d;
+  --diff-remove-bg: #d2504b14;
+
+  --shadow-overlay: 0 16px 48px -12px #00000099, 0 0 0 1px var(--border-strong);
+  --pdf-page-shadow: 0 4px 24px -4px #00000080;
+}
+
+[data-theme="light"] {
+  /* Paper: the base is the warm off-white, raised surfaces go lighter. */
+  --surface-sunken: #e9e2d4;
+  --surface-base: #f4f0e6;
+  --surface-raised: #fbf8f2;
+  --surface-overlay: #ffffff;
+  --surface-hover: #ece5d7;
+
+  --border: #ddd4c2;
+  --border-strong: #c2b7a2;
+
+  --text-primary: #2a2419;
+  --text-secondary: #5f5647;
+  --text-muted: #8d8373;
+
+  --accent: #a85a2c;
+  --accent-hover: #914b22;
+  --accent-subtle: #a85a2c1a;
+  --accent-fg: #ffffff;
+
+  --danger: #b3352f;
+  --danger-subtle: #b3352f14;
+  --warning: #9a6f13;
+  --warning-subtle: #9a6f1314;
+  --success: #4a7540;
+  --success-subtle: #4a754014;
+  --info: #3f6484;
+
+  --diff-add: #3f6b35;
+  --diff-add-bg: #4a75401a;
+  --diff-remove: #a83b35;
+  --diff-remove-bg: #b3352f14;
+
+  --shadow-overlay: 0 16px 48px -12px #4a3f2e33, 0 0 0 1px var(--border-strong);
+  --pdf-page-shadow: 0 2px 16px -2px #4a3f2e40;
+}
+
+/* `inline` makes utilities emit var(--surface-base) directly rather than
+   an indirection, so the [data-theme] override actually takes effect. */
+@theme inline {
+  --color-sunken: var(--surface-sunken);
+  --color-base: var(--surface-base);
+  --color-raised: var(--surface-raised);
+  --color-overlay: var(--surface-overlay);
+  --color-hover: var(--surface-hover);
+
+  --color-edge: var(--border);
+  --color-edge-strong: var(--border-strong);
+
+  --color-ink: var(--text-primary);
+  --color-ink-2: var(--text-secondary);
+  --color-ink-3: var(--text-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-fg: var(--accent-fg);
+
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-info: var(--info);
+
+  --color-diff-add: var(--diff-add);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-remove: var(--diff-remove);
+  --color-diff-remove-bg: var(--diff-remove-bg);
+
+  /* Bundled stacks only — a desktop app must render identically offline. */
+  --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* A real scale. Previously everything was 12px, so nothing had rank. */
+  --text-micro: 0.6875rem; /* 11px — panel headers, metadata */
+  --text-micro--line-height: 1rem;
+  --text-tiny: 0.75rem; /* 12px — dense secondary text */
+  --text-tiny--line-height: 1.125rem;
+  --text-small: 0.8125rem; /* 13px — body of lists, tree rows */
+  --text-small--line-height: 1.25rem;
+  --text-body: 0.875rem; /* 14px — default UI text */
+  --text-body--line-height: 1.375rem;
+  --text-title: 1rem; /* 16px — document title, modal headings */
+  --text-title--line-height: 1.5rem;
+}
+
+/* MUST stay inside @layer base.
+   Unlayered rules beat layered ones in the cascade, so an unlayered
+   `* { padding: 0 }` silently kills every Tailwind p-*/m-* utility in the app —
+   which is exactly what was happening before. */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 }
 
 html,
@@ -12,26 +157,60 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: #1a1a2e;
-  color: #e0e0e0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, sans-serif;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A small-caps label used for every panel header, so the panels read as
+   one system instead of ten differently-styled boxes. */
+.panel-label {
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Visible focus that follows the accent, for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e1e2e;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3a3a5c;
-  border-radius: 4px;
+  background: var(--border-strong);
+  border-radius: 5px;
+  /* Inset the thumb so it doesn't crowd the content. */
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a4a6c;
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* The range an inline Cmd+K edit will replace. Tinted rather than outlined so
+   it reads as "this is in scope" without looking like a selection the user
+   made — and stays legible over the current-line highlight. */
+.ai-target-range {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 2px;
 }

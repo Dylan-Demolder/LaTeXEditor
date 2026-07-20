@@ -1,0 +1,136 @@
+\section{Reference}
+\label{sec:reference}
+
+\subsection{Keyboard shortcuts}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Shortcuts (use \kbd{Ctrl} in place of \kbd{Cmd} on Windows and Linux)}
+  \label{tab:shortcuts}
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Keys} & \textbf{Action} \\
+    \midrule
+    \kbd{Cmd+Enter}       & Typeset \\
+    \kbd{Cmd+S}           & Save now (autosave handles this anyway) \\
+    \kbd{Cmd+Shift+P}     & Command palette (lists all shortcuts) \\
+    \midrule
+    \kbd{Cmd+K}           & Inline AI edit on the selection or paragraph \\
+    \kbd{Cmd+Enter}       & \dots{} accept the proposed edit \\
+    \kbd{Esc}             & \dots{} discard it, or stop a run \\
+    \kbd{Enter}           & \dots{} refine and run again \\
+    \midrule
+    \kbd{Cmd+F}           & Find \\
+    \kbd{Cmd+Alt+F}       & Find and replace \\
+    \kbd{Cmd+G}           & Go to line \\
+    \kbd{Cmd+/}           & Toggle comment \\
+    \kbd{Shift+Alt+Down}  & Duplicate line \\
+    \kbd{Alt+Up} / \kbd{Alt+Down} & Move line \\
+    \midrule
+    \kbd{Cmd+}\texttt{+} / \kbd{Cmd+}\texttt{-} & Zoom the preview in / out \\
+    \kbd{Cmd+0}           & Preview back to 100\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The preview zoom keys apply while the pointer is over the preview. Both panes
+are on screen at once, so the shortcut has to mean whichever one you are
+looking at --- with the pointer over the editor, the same keys resize the
+editor text instead.
+
+Anything not bound to a key is in the command palette, including toggling the
+sidebar, preview and issues panel.
+
+\subsection{Zooming the preview}
+
+Three ways, all doing the same thing:
+
+\begin{itemize}[leftmargin=*]
+  \item The \ui{$-$} and \ui{$+$} buttons, which step through a ladder of
+        round numbers rather than drifting onto values like 137\%.
+  \item Pinch on a trackpad, or \kbd{Ctrl}+scroll, which zooms continuously and
+        keeps the point under the pointer still --- so you can zoom into a
+        figure by pointing at it.
+  \item The percentage itself, which opens presets plus \ui{Fit width} and
+        \ui{Fit page}.
+\end{itemize}
+
+The two fit options are modes, not one-off calculations: drag the splitter and
+the page re-fits to the new pane width. Any manual zoom leaves the mode, since
+otherwise the next resize would undo what you just did.
+
+Pages render at your display's full pixel density, so zooming in shows more
+detail rather than magnifying a blurry image.
+
+\subsection{Choosing a compiler}
+
+\begin{description}[style=nextline, leftmargin=0pt, labelindent=0pt, labelwidth=0pt, font=\normalfont\ttfamily]
+  \item[pdflatex] The default. Fastest, and correct for most documents.
+  \item[xelatex] Choose when you need system fonts via \texttt{fontspec}, or
+        substantial non-Latin script.
+  \item[lualatex] Choose for \texttt{fontspec} plus embedded Lua, or when a
+        package requires it.
+  \item[latexmk] Not a compiler but a driver: it re-runs the real compiler
+        until references settle. The one to pick if the two-press rule of
+        Section~\ref{sec:passes} irritates you, or if you need BibTeX run
+        automatically.
+\end{description}
+
+\subsection{Troubleshooting}
+
+\begin{description}[style=nextline, leftmargin=0pt, labelindent=0pt, labelwidth=0pt, font=\normalfont\itshape]
+
+  \item[The compiler menu is empty.]
+  No \LaTeX{} distribution was found on your \texttt{PATH}. Install TeX Live,
+  MacTeX or MiKTeX and restart. Verify with \texttt{which pdflatex} in a
+  terminal --- if the shell cannot find it either, the problem is the
+  installation, not the editor.
+
+  \item[References show as \texttt{??}, the contents page is empty.]
+  Press \ui{Typeset} a second time. See Section~\ref{sec:passes}.
+
+  \item[Citations are undefined.]
+  The editor does not run BibTeX or Biber. Either use a
+  \texttt{thebibliography} environment as this guide does, run
+  \texttt{biber}/\texttt{bibtex} once in a terminal, or switch to
+  \texttt{latexmk}.
+
+  \item[The wrong file is being typeset.]
+  The editor builds the file containing \verb|\documentclass|. If your project
+  has several, the shortest path wins. Keep one root document per project
+  folder.
+
+  \item[The AI panel says ``whole file'' when you wanted a paragraph.]
+  Nothing is selected. Select the text first --- the panel always tells you
+  what it is about to send.
+
+  \item[\ui{Apply} is greyed out.]
+  Either the model proposed no change, or you switched files after running.
+  The panel says which.
+
+  \item[The MCP indicator says ``not running''.]
+  Another process holds port 9876. Everything else works.
+
+\end{description}
+
+\subsection{Current limitations}
+
+Stated plainly, so nothing here is a surprise:
+
+\begin{itemize}[leftmargin=*]
+  \item One file open at a time --- there are no editor tabs.
+  \item One compiler pass per press, with the consequences in
+        Section~\ref{sec:passes}.
+  \item SyncTeX exists in the backend but is not bound to a click.
+  \item Plugins are listed, not executed.
+  \item AI context collects \verb|\label|s from the open file only; citation
+        keys are gathered across the whole project.
+  \item One AI request at a time.
+\end{itemize}
+
+\subsection{Further reading}
+
+For \LaTeX{} itself rather than this editor, Lamport~\cite{lamport1994} remains
+the clearest introduction, Mittelbach and Goossens~\cite{mittelbach2004} is the
+reference to own when a package fights you, and Knuth~\cite{knuth1984} is where
+all of it comes from.

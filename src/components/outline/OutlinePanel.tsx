@@ -1,5 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "../../stores/useAppStore";
+import { goToLine } from "../editor/editor-bridge";
+import { SECTION_LEVELS } from "../editor/latex-language";
 
 interface Section {
   level: number; // 1=section, 2=subsection, 3=subsubsection
@@ -12,62 +14,51 @@ export default function OutlinePanel() {
   const [sections, setSections] = useState<Section[]>([]);
 
   useEffect(() => {
-    const re = /\\(section|subsection|subsubsection|chapter|paragraph)\{([^}]*)\}/g;
+    // Starred forms (\section*) count too; text after an unescaped % does not.
+    const re =
+      /\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\s*\{([^}]*)\}/g;
     const results: Section[] = [];
-    let match;
-    const lines = activeFileContent.split("\n");
-    lines.forEach((line, idx) => {
+
+    activeFileContent.split("\n").forEach((rawLine, idx) => {
+      const line = rawLine.replace(/(^|[^\\])%.*$/, "$1");
+      re.lastIndex = 0;
+      let match;
       while ((match = re.exec(line)) !== null) {
-        const levelMap: Record<string, number> = {
-          chapter: 0,
-          section: 1,
-          subsection: 2,
-          subsubsection: 3,
-          paragraph: 4,
-        };
         results.push({
-          level: levelMap[match[1]] || 1,
+          level: SECTION_LEVELS[match[1]] ?? 1,
           title: match[2],
           line: idx + 1,
         });
       }
     });
+
     setSections(results);
   }, [activeFileContent]);
-
-  const handleJump = useCallback((line: number) => {
-    const editor = (window as any).monaco?.editor?.getEditors?.()?.[0];
-    if (editor) {
-      editor.revealLineInCenter(line);
-      editor.setPosition({ lineNumber: line, column: 1 });
-      editor.focus();
-    }
-  }, []);
 
   const levelIndent = (l: number) => ({ paddingLeft: `${l * 12 + 8}px` });
   const levelIcon = (l: number) => ["█", "§", "▸", "·", "—"][l] || "·";
 
   return (
-    <div className="h-full flex flex-col bg-gray-850 overflow-hidden">
-      <div className="px-3 py-1.5 bg-gray-800 border-b border-gray-700 text-gray-300 text-xs font-medium">
-        Outline
+    <div className="h-full flex flex-col bg-base overflow-hidden">
+      <div className="flex items-center pl-3 pr-1.5 h-8 shrink-0 border-b border-edge">
+        <span className="panel-label">Outline</span>
       </div>
       <div className="flex-1 overflow-y-auto">
         {sections.length === 0 ? (
-          <div className="px-4 py-4 text-gray-500 text-xs">
+          <div className="px-4 py-4 text-ink-3 text-tiny">
             No sections found. Use \\section, \\subsection, etc.
           </div>
         ) : (
           sections.map((s, i) => (
             <div
               key={i}
-              onClick={() => handleJump(s.line)}
-              className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-gray-700/50 text-xs text-gray-400 border-b border-gray-700/20"
+              onClick={() => goToLine(s.line)}
+              className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-hover text-tiny text-ink-2 border-b border-edge"
               style={levelIndent(s.level)}
             >
-              <span className="text-gray-600 w-3 text-center">{levelIcon(s.level)}</span>
+              <span className="text-ink-3 w-3 text-center">{levelIcon(s.level)}</span>
               <span className="truncate">{s.title}</span>
-              <span className="text-gray-600 ml-auto tabular-nums">:{s.line}</span>
+              <span className="text-ink-3 ml-auto tabular-nums">:{s.line}</span>
             </div>
           ))
         )}

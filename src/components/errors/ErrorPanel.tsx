@@ -1,8 +1,14 @@
 import { useAppStore } from "../../stores/useAppStore";
 import { readFile } from "../../hooks/useTauriCommands";
+import { goToLine } from "../editor/editor-bridge";
+import { Icon, type IconName } from "../icons";
 import type { LaTeXError } from "../../types";
 
-export default function ErrorPanel() {
+interface Props {
+  onHide?: () => void;
+}
+
+export default function ErrorPanel({ onHide }: Props) {
   const {
     compileErrors,
     compileWarnings,
@@ -19,150 +25,97 @@ export default function ErrorPanel() {
       setActiveFile(err.file);
       setActiveFileContent(content);
 
-      // Navigate to the error line in the editor
-      setTimeout(() => {
-        const editors = (window as any).monaco?.editor?.getEditors?.();
-        if (editors?.length > 0) {
-          editors[0].revealLineInCenter(err.line);
-          editors[0].setPosition({ lineNumber: err.line, column: 1 });
-          editors[0].focus();
-        }
-      }, 100);
+      // Let the editor swap models to the newly-opened file before seeking.
+      setTimeout(() => goToLine(err.line), 100);
     } catch (e) {
       console.error("Failed to open file for error:", e);
     }
   };
 
-  const severityBg = (severity: string) => {
-    switch (severity) {
-      case "error":
-        return "bg-red-900/30 border-red-700";
-      case "warning":
-        return "bg-yellow-900/20 border-yellow-700";
-      default:
-        return "bg-blue-900/20 border-blue-700";
-    }
-  };
-
-  const severityIcon = (severity: string) => {
-    switch (severity) {
-      case "error":
-        return "✗";
-      case "warning":
-        return "⚠";
-      default:
-        return "ℹ";
-    }
-  };
-
-  const severityColor = (severity: string) => {
-    switch (severity) {
-      case "error":
-        return "text-red-400";
-      case "warning":
-        return "text-yellow-400";
-      default:
-        return "text-blue-400";
-    }
-  };
+  const severityStyles = (severity: string) =>
+    severity === "error"
+      ? { row: "hover:bg-danger-subtle", icon: "text-danger", text: "text-ink" }
+      : severity === "warning"
+        ? { row: "hover:bg-warning-subtle", icon: "text-warning", text: "text-ink" }
+        : { row: "hover:bg-hover", icon: "text-info", text: "text-ink-2" };
 
   const totalIssues = compileErrors.length + compileWarnings.length + compileBadboxes.length;
 
   return (
-    <div className="h-full w-full flex flex-col bg-gray-850">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 text-gray-300 text-xs">
-        <span>
-          Issues{" "}
+    <div className="h-full w-full flex flex-col bg-base">
+      <div className="flex items-center justify-between pl-3 pr-1.5 h-8 shrink-0 border-b border-edge">
+        <div className="flex items-center gap-2">
+          <span className="panel-label">Issues</span>
           {totalIssues > 0 && (
-            <span className="text-gray-500">({totalIssues})</span>
+            <span className="text-micro text-ink-3 tabular-nums">{totalIssues}</span>
           )}
-        </span>
-        {compileMessage && (
-          <span
-            className={`text-xs ${
-              compileErrors.length > 0 ? "text-red-400" : "text-green-400"
-            }`}
-          >
-            {compileMessage}
-          </span>
-        )}
+        </div>
+        <div className="flex items-center gap-3">
+          {compileMessage && (
+            <span
+              className={`text-tiny ${
+                compileErrors.length > 0 ? "text-danger" : "text-success"
+              }`}
+            >
+              {compileMessage}
+            </span>
+          )}
+          {onHide && (
+            <button
+              onClick={onHide}
+              title="Hide issues panel"
+              className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover transition-colors"
+            >
+              <Icon name="close" size={14} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         {totalIssues === 0 ? (
-          <div className="px-4 py-4 text-gray-500 text-xs">
-            {compileMessage || "No issues found. Compile to check for errors."}
+          <div className="flex flex-col items-center justify-center h-full gap-2 py-8 text-ink-3">
+            <Icon name="check" size={20} className="text-success" />
+            <span className="text-tiny">
+              {compileMessage || "No issues. Typeset to check your document."}
+            </span>
           </div>
         ) : (
           <>
-            {compileErrors.map((err, i) => (
-              <div
-                key={`err-${i}`}
-                className={`border-b border-gray-700/50 px-3 py-2 cursor-pointer hover:opacity-80 ${severityBg(
-                  "error"
-                )}`}
-                onClick={() => handleJumpToError(err)}
-              >
-                <div className="flex items-start gap-2">
-                  <span className={severityColor("error") + " text-xs mt-0.5"}>
-                    {severityIcon("error")}
-                  </span>
+            {[
+              ...compileErrors.map((e) => ({ e, severity: "error" as const, clickable: true })),
+              ...compileWarnings.map((e) => ({ e, severity: "warning" as const, clickable: true })),
+              ...compileBadboxes.map((e) => ({ e, severity: "info" as const, clickable: false })),
+            ].map(({ e, severity, clickable }, i) => {
+              const style = severityStyles(severity);
+              const icon: IconName =
+                severity === "error"
+                  ? "alert-circle"
+                  : severity === "warning"
+                    ? "alert-triangle"
+                    : "box";
+              return (
+                <div
+                  key={`${severity}-${i}`}
+                  onClick={clickable ? () => handleJumpToError(e) : undefined}
+                  className={`flex items-start gap-2.5 px-3 py-2 border-b border-edge/60 transition-colors ${style.row} ${
+                    clickable ? "cursor-pointer" : ""
+                  }`}
+                >
+                  <Icon name={icon} size={14} className={`${style.icon} mt-0.5`} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-red-300 text-xs">{err.message}</div>
-                    {err.context && (
-                      <div className="text-gray-500 text-xs mt-0.5 line-clamp-2">
-                        {err.context}
+                    <div className={`text-tiny ${style.text}`}>{e.message}</div>
+                    {e.context && (
+                      <div className="text-tiny text-ink-3 font-mono mt-1 truncate">
+                        {e.context}
                       </div>
                     )}
-                    <div className="text-gray-600 text-xs mt-0.5">
-                      Line {err.line}
-                      {err.file && ` • ${err.file.split("/").pop()}`}
+                    <div className="text-micro text-ink-3 mt-1 tabular-nums">
+                      {e.file ? `${e.file.split("/").pop()}:${e.line}` : `line ${e.line}`}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            {compileWarnings.map((warn, i) => (
-              <div
-                key={`warn-${i}`}
-                className={`border-b border-gray-700/50 px-3 py-2 cursor-pointer hover:opacity-80 ${severityBg(
-                  "warning"
-                )}`}
-                onClick={() => handleJumpToError(warn)}
-              >
-                <div className="flex items-start gap-2">
-                  <span className={severityColor("warning") + " text-xs mt-0.5"}>
-                    {severityIcon("warning")}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-yellow-300 text-xs">{warn.message}</div>
-                    <div className="text-gray-600 text-xs mt-0.5">
-                      Line {warn.line}
-                      {warn.file && ` • ${warn.file.split("/").pop()}`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {compileBadboxes.map((bb, i) => (
-              <div
-                key={`bb-${i}`}
-                className={`border-b border-gray-700/50 px-3 py-2 ${severityBg(
-                  "warning"
-                )}`}
-              >
-                <div className="flex items-start gap-2">
-                  <span className={severityColor("warning") + " text-xs mt-0.5"}>
-                    ▢
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-yellow-300/70 text-xs">{bb.message}</div>
-                    <div className="text-gray-600 text-xs mt-0.5">
-                      Line {bb.line}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
       </div>

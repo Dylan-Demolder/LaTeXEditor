@@ -1,14 +1,42 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import type { RenderParameters } from "pdfjs-dist/types/src/display/api";
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useAppStore } from "../../stores/useAppStore";
 import { readPdf } from "../../hooks/useTauriCommands";
+import { Icon } from "../icons";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs";
+// Bundled worker, not a CDN one: the app must work offline, and pdf.js refuses
+// to run a worker whose version differs from the library's.
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 5;
+
+/**
+ * Stops the +/- buttons on arbitrary values. Stepping by a fixed factor drifts
+ * to things like 137%, which reads as broken; this lands on numbers a reader
+ * recognises. Pinch zoom stays continuous and ignores the ladder.
+ */
+const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5];
+
+function stepZoom(scale: number, direction: 1 | -1): number {
+  if (direction === 1) {
+    return ZOOM_STEPS.find((s) => s > scale + 0.001) ?? MAX_SCALE;
+  }
+  return [...ZOOM_STEPS].reverse().find((s) => s < scale - 0.001) ?? MIN_SCALE;
+}
+
+const clamp = (n: number) => Math.max(MIN_SCALE, Math.min(MAX_SCALE, n));
+
+/** Padding inside the scroll container, matching the p-6 on the page area. */
+const PAGE_MARGIN = 48;
+
+type FitMode = "none" | "width" | "page";
 
 export default function PDFPreview() {
-  const { pdfPath, compileMessage, isCompiling, compileErrors } = useAppStore();
+  const { pdfPath, pdfVersion, compileMessage, isCompiling, compileErrors } =
+    useAppStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -17,6 +45,17 @@ export default function PDFPreview() {
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fit is a mode, not a one-off calculation. Computing a scale once and
+  // forgetting meant the page stopped fitting the moment you dragged the
+  // splitter — which is exactly when you were trying to make it fit.
+  const [fitMode, setFitMode] = useState<FitMode>("none");
+  /** The page at scale 1, in CSS pixels — what fit calculations divide into. */
+  const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const hovering = useRef(false);
+  /** Scroll position to restore after a cursor-anchored zoom. */
+  const anchorRef = useRef<{ x: number; y: number; ratio: number } | null>(null);
 
   const loadPdf = useCallback(async (path: string) => {
     setLoading(true);
@@ -27,7 +66,9 @@ export default function PDFPreview() {
       const doc = await pdfjsLib.getDocument({ data: uint8 }).promise;
       setPdfDoc(doc);
       setNumPages(doc.numPages);
-      setPageNum(1);
+      // Recompiles reload the same document; keep the reader where they were
+      // instead of yanking them back to page 1 on every build.
+      setPageNum((p) => Math.min(Math.max(p, 1), doc.numPages));
     } catch (e) {
       setError(`Failed to load PDF: ${e}`);
       setPdfDoc(null);
@@ -42,120 +83,307 @@ export default function PDFPreview() {
     } else {
       setPdfDoc(null);
     }
-  }, [pdfPath, loadPdf]);
+    // pdfVersion changes on every compile so a rebuild of the same path reloads.
+  }, [pdfPath, pdfVersion, loadPdf]);
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
 
-    const renderPage = async (num: number) => {
-      const page = await pdfDoc.getPage(num);
-      const viewport = page.getViewport({ scale });
-      const canvas = canvasRef.current!;
-      const ctx = canvas.getContext("2d")!;
+    // pdf.js throws if two render tasks share a canvas, which happens whenever
+    // the user pages or zooms faster than a page renders.
+    let cancelled = false;
+    let task: pdfjsLib.RenderTask | null = null;
 
-      canvas.height = viewport.height;
+    (async () => {
+      const page = await pdfDoc.getPage(pageNum);
+      if (cancelled || !canvasRef.current) return;
+
+      // Render at the display's true pixel density. Sizing the canvas in CSS
+      // pixels means every rendered pixel is stretched across dpr^2 device
+      // pixels on a Retina screen, which is why the text looked soft. Cap at 3
+      // so a very high-DPI display doesn't allocate an enormous backing store.
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      const viewport = page.getViewport({ scale: scale * dpr });
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d", { alpha: false })!;
+
       canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      // Backing store is dpr times larger; display it at the logical size.
+      canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
+      canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
 
-      const renderTask = page.render({
-        canvasContext: ctx,
-        viewport: viewport,
-      } as RenderParameters);
-      await renderTask.promise;
+      // Remember the unscaled page so fit modes have something to divide into.
+      const natural = page.getViewport({ scale: 1 });
+      setPageSize((prev) =>
+        prev && prev.w === natural.width && prev.h === natural.height
+          ? prev
+          : { w: natural.width, h: natural.height }
+      );
+
+      task = page.render({ canvasContext: ctx, viewport } as RenderParameters);
+      try {
+        await task.promise;
+      } catch {
+        // Cancelled by a newer render; nothing to report.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      task?.cancel();
     };
-
-    renderPage(pageNum);
   }, [pdfDoc, pageNum, scale]);
+
+  /** Recompute the scale a fit mode implies, from the live container size. */
+  const applyFit = useCallback(
+    (mode: FitMode) => {
+      const container = containerRef.current;
+      if (mode === "none" || !container || !pageSize) return;
+      const availableW = container.clientWidth - PAGE_MARGIN;
+      const availableH = container.clientHeight - PAGE_MARGIN;
+      const next =
+        mode === "width"
+          ? availableW / pageSize.w
+          : Math.min(availableW / pageSize.w, availableH / pageSize.h);
+      if (next > 0) setScale(clamp(Math.round(next * 100) / 100));
+    },
+    [pageSize]
+  );
+
+  // Re-fit whenever the pane is resized or the page dimensions change.
+  useEffect(() => {
+    if (fitMode === "none") return;
+    applyFit(fitMode);
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => applyFit(fitMode));
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fitMode, applyFit]);
+
+  /** Any manual zoom leaves fit mode — otherwise the next resize undoes it. */
+  const zoomTo = useCallback((next: number) => {
+    setFitMode("none");
+    setScale(clamp(next));
+  }, []);
+
+  /**
+   * Pinch on a trackpad arrives as a wheel event with ctrlKey set. Zoom
+   * continuously rather than through the ladder, and keep the point under the
+   * pointer still — zooming toward the centre while you point at a figure is
+   * the thing that makes a preview feel broken.
+   */
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+
+    setFitMode("none");
+    setScale((prev) => {
+      const next = clamp(prev * Math.exp(-e.deltaY / 200));
+      anchorRef.current = {
+        x: (container.scrollLeft + cx) * (next / prev) - cx,
+        y: (container.scrollTop + cy) * (next / prev) - cy,
+        ratio: next / prev,
+      };
+      return next;
+    });
+  }, []);
+
+  // Restore the anchored scroll position after the canvas has resized. In a
+  // layout effect so it lands before paint and the page does not visibly jump.
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const container = containerRef.current;
+    anchorRef.current = null;
+    if (!anchor || !container) return;
+    container.scrollLeft = Math.max(0, anchor.x);
+    container.scrollTop = Math.max(0, anchor.y);
+  }, [scale]);
+
+  /**
+   * Cmd +/-/0 while the pointer is over the preview. Scoped to hover rather
+   * than bound globally so it does not steal the editor's own zoom — two panes
+   * are visible at once and the shortcut has to mean whichever one you are
+   * looking at.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !hovering.current || !pdfDoc) return;
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        setFitMode("none");
+        setScale((s) => stepZoom(s, 1));
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        setFitMode("none");
+        setScale((s) => stepZoom(s, -1));
+      } else if (e.key === "0") {
+        e.preventDefault();
+        setFitMode("none");
+        setScale(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pdfDoc]);
+
+  // Clicking anywhere else dismisses the zoom menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpen]);
 
   const hasErrors = compileErrors.length > 0;
 
   return (
-    <div className="h-full w-full flex flex-col bg-gray-900">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700 text-gray-300 text-xs">
-        <span>PDF Preview</span>
-        <div className="flex items-center gap-3">
+    <div className="h-full w-full flex flex-col bg-sunken">
+      <div className="flex items-center justify-between pl-3 pr-1.5 h-8 shrink-0 border-b border-edge bg-base">
+        <span className="panel-label">Preview</span>
+        <div className="flex items-center gap-1">
           {pdfDoc && (
             <>
               <button
                 onClick={() => setPageNum((p) => Math.max(1, p - 1))}
                 disabled={pageNum <= 1}
-                className="px-1.5 py-0.5 text-gray-400 hover:text-white disabled:opacity-30"
+                title="Previous page"
+                className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
-                Prev
+                <Icon name="chevron-right" size={14} className="rotate-180" />
               </button>
-              <span>
+              <span className="text-tiny text-ink-2 tabular-nums px-1 select-none">
                 {pageNum} / {numPages}
               </span>
               <button
                 onClick={() => setPageNum((p) => Math.min(numPages, p + 1))}
                 disabled={pageNum >= numPages}
-                className="px-1.5 py-0.5 text-gray-400 hover:text-white disabled:opacity-30"
+                title="Next page"
+                className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
-                Next
+                <Icon name="chevron-right" size={14} />
               </button>
-              <select
-                value={scale}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === "fit") {
-                    if (canvasRef.current && containerRef.current) {
-                      const containerWidth = containerRef.current.clientWidth - 32;
-                      if (canvasRef.current.width > 0) {
-                        const fitScale = Math.round((containerWidth / canvasRef.current.width) * 100) / 100;
-                        setScale(fitScale);
-                      }
-                    }
-                  } else {
-                    setScale(Number(val));
-                  }
-                }}
-                className="bg-gray-700 text-gray-300 text-xs px-1 py-0.5 rounded"
+              <div className="w-px h-4 bg-edge mx-1" />
+
+              <button
+                onClick={() => zoomTo(stepZoom(scale, -1))}
+                disabled={scale <= MIN_SCALE}
+                title="Zoom out (⌘−)"
+                className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
               >
-                <option value={0.75}>75%</option>
-                <option value={1.0}>100%</option>
-                <option value={1.2}>120%</option>
-                <option value={1.5}>150%</option>
-                <option value={2.0}>200%</option>
-                <option value="fit">Fit Width</option>
-              </select>
+                <Icon name="minus" size={14} />
+              </button>
+
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen((o) => !o);
+                  }}
+                  title="Zoom presets"
+                  className="text-tiny text-ink-2 hover:text-ink tabular-nums px-1.5 h-6 rounded hover:bg-hover transition-colors min-w-[3.25rem]"
+                >
+                  {fitMode === "width" ? "Fit W" : fitMode === "page" ? "Fit" : `${Math.round(scale * 100)}%`}
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-7 z-30 py-1 rounded-md border border-edge-strong bg-raised shadow-xl min-w-[7.5rem]">
+                    {[0.5, 0.75, 1, 1.5, 2, 3].map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => zoomTo(preset)}
+                        className={`block w-full text-left text-tiny px-3 py-1 hover:bg-hover ${
+                          fitMode === "none" && Math.abs(scale - preset) < 0.001
+                            ? "text-accent"
+                            : "text-ink-2"
+                        }`}
+                      >
+                        {preset * 100}%
+                      </button>
+                    ))}
+                    <div className="h-px bg-edge my-1" />
+                    <button
+                      onClick={() => setFitMode("width")}
+                      className={`block w-full text-left text-tiny px-3 py-1 hover:bg-hover ${
+                        fitMode === "width" ? "text-accent" : "text-ink-2"
+                      }`}
+                    >
+                      Fit width
+                    </button>
+                    <button
+                      onClick={() => setFitMode("page")}
+                      className={`block w-full text-left text-tiny px-3 py-1 hover:bg-hover ${
+                        fitMode === "page" ? "text-accent" : "text-ink-2"
+                      }`}
+                    >
+                      Fit page
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => zoomTo(stepZoom(scale, 1))}
+                disabled={scale >= MAX_SCALE}
+                title="Zoom in (⌘+)"
+                className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              >
+                <Icon name="plus" size={14} />
+              </button>
             </>
           )}
         </div>
       </div>
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto flex justify-center bg-gray-850 p-4"
+        onWheel={handleWheel}
+        onMouseEnter={() => (hovering.current = true)}
+        onMouseLeave={() => (hovering.current = false)}
+        className="flex-1 overflow-auto flex justify-center p-6"
       >
         {loading && (
-          <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-            Loading PDF...
+          <div className="flex items-center justify-center h-full text-ink-3 text-tiny">
+            Loading PDF…
           </div>
         )}
         {isCompiling && (
-          <div className="flex items-center justify-center h-full text-gray-500 text-sm animate-pulse">
-            Compiling...
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-ink-3 text-tiny">
+            <span className="animate-spin w-4 h-4 border-[1.5px] border-current/30 border-t-current rounded-full" />
+            Typesetting…
           </div>
         )}
         {error && (
-          <div className="flex items-center justify-center h-full text-red-400 text-sm">
-            {error}
+          <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center">
+            <Icon name="alert-circle" size={20} className="text-danger" />
+            <span className="text-tiny text-danger">{error}</span>
           </div>
         )}
         {hasErrors && !pdfDoc && !loading && !isCompiling && (
-          <div className="flex flex-col items-center justify-center h-full text-yellow-400 text-sm gap-2">
-            <span>Compilation failed</span>
-            <span className="text-gray-500 text-xs">{compileMessage}</span>
+          <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center">
+            <Icon name="alert-triangle" size={20} className="text-warning" />
+            <span className="text-tiny text-ink-2">Typesetting failed</span>
+            <span className="text-micro text-ink-3">{compileMessage}</span>
           </div>
         )}
         {!hasErrors && !pdfDoc && !loading && !isCompiling && !error && (
-          <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-            Compile a document to see the PDF preview
+          <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
+            <Icon name="file-pdf" size={24} className="text-ink-3 opacity-60" />
+            <span className="text-tiny text-ink-3">
+              Typeset your document to see it here
+            </span>
           </div>
         )}
         {pdfDoc && (
           <canvas
             ref={canvasRef}
-            className="shadow-lg"
-            style={{ backgroundColor: "white" }}
+            className="self-start rounded-sm"
+            style={{ backgroundColor: "white", boxShadow: "var(--pdf-page-shadow)" }}
           />
         )}
       </div>

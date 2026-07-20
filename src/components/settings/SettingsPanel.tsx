@@ -6,6 +6,8 @@ import {
   callAi,
 } from "../../hooks/useTauriCommands";
 import { aiSkills } from "../../data/ai-skills";
+import { applyTheme } from "../../lib/theme";
+import { Icon } from "../icons";
 
 interface Props {
   onClose: () => void;
@@ -65,24 +67,24 @@ export default function SettingsPanel({ onClose }: Props) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-        <div className="bg-gray-850 p-6 rounded-lg text-gray-300 text-sm">Loading settings...</div>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-base p-6 rounded-xl text-ink text-body">Loading settings...</div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-gray-850 border border-gray-600 rounded-lg w-[650px] max-h-[85vh] flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-          <h2 className="text-sm font-medium text-gray-200">Settings</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-lg leading-none">×</button>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-base border border-edge-strong rounded-xl w-[650px] max-h-[85vh] flex flex-col shadow-[var(--shadow-overlay)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
+          <h2 className="text-body font-medium text-ink">Settings</h2>
+          <button onClick={onClose} className="grid place-items-center w-7 h-7 rounded-md text-ink-2 hover:text-ink hover:bg-hover transition-colors"><Icon name="close" size={15} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
           {/* Provider Selection */}
           <div>
-            <h3 className="text-xs font-medium text-gray-400 mb-2">AI Provider</h3>
+            <h3 className="text-tiny font-medium text-ink-2 mb-2">AI Provider</h3>
             <select
               value={settings.activeProvider}
               onChange={(e) => {
@@ -94,7 +96,7 @@ export default function SettingsPanel({ onClose }: Props) {
                   activeModel: provider?.models[0]?.id || "",
                 }));
               }}
-              className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1.5 rounded border border-gray-600"
+              className="w-full bg-hover text-ink text-tiny px-2 py-1.5 rounded border border-edge-strong"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -104,11 +106,11 @@ export default function SettingsPanel({ onClose }: Props) {
 
           {/* Model Selection */}
           <div>
-            <h3 className="text-xs font-medium text-gray-400 mb-2">Model</h3>
+            <h3 className="text-tiny font-medium text-ink-2 mb-2">Model</h3>
             <select
               value={settings.activeModel}
               onChange={(e) => setSettings((s) => ({ ...s, activeModel: e.target.value }))}
-              className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1.5 rounded border border-gray-600"
+              className="w-full bg-hover text-ink text-tiny px-2 py-1.5 rounded border border-edge-strong"
             >
               {activeProvider?.models.map((m) => (
                 <option key={m.id} value={m.id}>{m.name}</option>
@@ -118,11 +120,11 @@ export default function SettingsPanel({ onClose }: Props) {
 
           {/* API Keys */}
           <div>
-            <h3 className="text-xs font-medium text-gray-400 mb-2">API Keys</h3>
+            <h3 className="text-tiny font-medium text-ink-2 mb-2">API Keys</h3>
             <div className="space-y-2">
               {PROVIDERS.filter((p) => p.requiresApiKey).map((p) => (
                 <div key={p.id} className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 w-24">{p.name.replace(/\(.*\)/, "").trim()}</span>
+                  <span className="text-tiny text-ink-2 w-24">{p.name.replace(/\(.*\)/, "").trim()}</span>
                   <div className="flex-1 flex gap-1">
                     <input
                       type={showKeys[p.id] ? "text" : "password"}
@@ -134,20 +136,20 @@ export default function SettingsPanel({ onClose }: Props) {
                         }))
                       }
                       placeholder={p.id === "openai" ? "sk-..." : p.id === "anthropic" ? "sk-ant-..." : "Enter key"}
-                      className="flex-1 bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600 font-mono"
+                      className="flex-1 bg-hover text-ink text-tiny px-2 py-1 rounded border border-edge-strong font-mono"
                     />
                     <button
                       onClick={() => setShowKeys((s) => ({ ...s, [p.id]: !s[p.id] }))}
-                      className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-400 rounded"
+                      className="grid place-items-center w-8 rounded-md bg-hover hover:bg-edge-strong text-ink-2 transition-colors"
                     >
-                      {showKeys[p.id] ? "🙈" : "👁"}
+                      <Icon name={showKeys[p.id] ? "eye-off" : "eye"} size={14} />
                     </button>
                   </div>
                   <a
                     href={p.apiDocs}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-blue-400 hover:text-blue-300 min-w-[50px] text-right"
+                    className="text-tiny text-accent hover:text-accent-hover min-w-[50px] text-right"
                   >
                     Get key →
                   </a>
@@ -156,10 +158,38 @@ export default function SettingsPanel({ onClose }: Props) {
             </div>
           </div>
 
+          {/* Appearance */}
+          <div>
+            <h3 className="panel-label mb-2">Appearance</h3>
+            <div className="flex gap-2">
+              {(["dark", "light"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setSettings((s) => ({ ...s, theme: t }));
+                    // Apply immediately so the choice is visible before saving.
+                    applyTheme(t);
+                  }}
+                  className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border text-tiny capitalize transition-colors ${
+                    settings.theme === t
+                      ? "border-accent bg-accent-subtle text-accent"
+                      : "border-edge text-ink-2 hover:border-edge-strong hover:text-ink"
+                  }`}
+                >
+                  <span
+                    className="w-4 h-4 rounded border border-edge-strong shrink-0"
+                    style={{ background: t === "dark" ? "#16130f" : "#f4f0e6" }}
+                  />
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Parameters */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <h3 className="text-xs font-medium text-gray-400 mb-1">Temperature ({settings.temperature})</h3>
+              <h3 className="text-tiny font-medium text-ink-2 mb-1">Temperature ({settings.temperature})</h3>
               <input
                 type="range"
                 min="0"
@@ -173,21 +203,45 @@ export default function SettingsPanel({ onClose }: Props) {
               />
             </div>
             <div>
-              <h3 className="text-xs font-medium text-gray-400 mb-1">Max Tokens</h3>
+              <h3 className="text-tiny font-medium text-ink-2 mb-1">Max Tokens</h3>
               <select
                 value={settings.maxTokens}
                 onChange={(e) =>
                   setSettings((s) => ({ ...s, maxTokens: parseInt(e.target.value) }))
                 }
-                className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1.5 rounded border border-gray-600"
+                className="w-full bg-hover text-ink text-tiny px-2 py-1.5 rounded border border-edge-strong"
               >
                 <option value={1024}>1,024</option>
                 <option value={2048}>2,048</option>
                 <option value={4096}>4,096</option>
                 <option value={8192}>8,192</option>
                 <option value={16384}>16,384</option>
+                <option value={32768}>32,768</option>
+                <option value={65536}>65,536</option>
               </select>
             </div>
+          </div>
+
+          {/* Reasoning */}
+          <div>
+            <h3 className="panel-label mb-2">Speed</h3>
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.reduceReasoning !== false}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, reduceReasoning: e.target.checked }))
+                }
+                className="mt-0.5 accent-[var(--accent)]"
+              />
+              <span className="text-tiny text-ink-2">
+                <span className="text-ink">Answer directly, without deliberating</span>
+                <br />
+                Skills work on short passages, where a model that thinks first costs
+                several times the wait for the same edit. Measured on OpenCode Go: 1.3s
+                instead of 7.0s. Turn this off if you want the model to reason at length.
+              </span>
+            </label>
           </div>
 
           {/* Test Connection */}
@@ -195,16 +249,16 @@ export default function SettingsPanel({ onClose }: Props) {
             <button
               onClick={handleTest}
               disabled={testing}
-              className={`px-3 py-1.5 text-xs rounded transition-colors ${
+              className={`px-3 py-1.5 text-tiny rounded transition-colors ${
                 testing
-                  ? "bg-gray-700 text-gray-500"
-                  : "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                  ? "bg-hover text-ink-3"
+                  : "bg-hover hover:bg-edge-strong text-ink"
               }`}
             >
               {testing ? "Testing..." : "Test Connection"}
             </button>
             {testResult && (
-              <span className={`text-xs ${testResult.startsWith("Connected") ? "text-green-400" : "text-red-400"}`}>
+              <span className={`text-tiny ${testResult.startsWith("Connected") ? "text-success" : "text-danger"}`}>
                 {testResult}
               </span>
             )}
@@ -212,10 +266,10 @@ export default function SettingsPanel({ onClose }: Props) {
 
           {/* Available Skills Summary */}
           <div>
-            <h3 className="text-xs font-medium text-gray-400 mb-2">AI Skills Available</h3>
+            <h3 className="text-tiny font-medium text-ink-2 mb-2">AI Skills Available</h3>
             <div className="grid grid-cols-2 gap-1">
               {aiSkills.map((s) => (
-                <div key={s.id} className="flex items-center gap-1.5 text-xs text-gray-500">
+                <div key={s.id} className="flex items-center gap-1.5 text-tiny text-ink-3">
                   <span>{s.icon}</span>
                   <span className="truncate">{s.name}</span>
                 </div>
@@ -224,22 +278,22 @@ export default function SettingsPanel({ onClose }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-700 bg-gray-800/50 rounded-b-lg">
-          <span className="text-xs text-gray-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-edge bg-hover/50 rounded-b-lg">
+          <span className="text-tiny text-ink-3">
             Settings stored in ~/.latex-editor/settings.json
           </span>
           <div className="flex items-center gap-2">
-            {saveMsg && <span className="text-xs text-green-400">{saveMsg}</span>}
+            {saveMsg && <span className="text-tiny text-success">{saveMsg}</span>}
             <button
               onClick={onClose}
-              className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+              className="px-3 py-1 text-tiny bg-hover hover:bg-edge-strong text-ink rounded"
             >
               Close
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+              className="px-4 py-1 text-tiny bg-accent hover:bg-accent-hover text-accent-fg rounded disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save"}
             </button>

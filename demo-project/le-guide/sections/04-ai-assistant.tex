@@ -1,0 +1,315 @@
+\section{The AI assistant}
+\label{sec:ai}
+
+The assistant is built around one idea: it should change your document, not
+describe a change and leave you to transcribe it. Everything below follows from
+that.
+
+\subsection{Setting it up}
+
+Open \ui{Settings}, choose a provider, paste its key, and press
+\ui{Test Connection}. Supported providers are OpenAI, Anthropic, DeepSeek,
+OpenRouter, Grok, OpenCode Go, and Ollama --- the last running locally and
+needing no key at all, which is the option to reach for if you would rather
+your draft never left the machine.
+
+Keys are stored in \texttt{\textasciitilde/.latex-editor/settings.json}.
+
+\subsection{Model and speed}
+\label{sec:ai-model}
+
+Skills work on short passages, so what matters is latency, not raw capability.
+The thing that dominates latency is whether the model \emph{deliberates} before
+answering --- and most current models do, at length.
+
+Proofreading one section of this guide, identical text and prompt each time:
+
+\begin{table}[htbp]
+  \centering
+  \caption{Measured on this document, via OpenCode Go}
+  \label{tab:models}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Configuration} & \textbf{Time} & \textbf{Thinking} \\
+    \midrule
+    \texttt{deepseek-v4-pro}                        & 150\,s & 40{,}700 chars \\
+    \texttt{deepseek-v4-flash}                      & 45\,s  & 22{,}600 chars \\
+    \texttt{deepseek-v4-flash}, deliberation off    & 6\,s   & 0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Twenty-five times faster end to end, for an edit of the same quality. The two
+settings that get you there are both on by default:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{A fast model.} Reach for a heavier one only where the reasoning
+        earns its keep, which proofreading a paragraph does not.
+  \item \textbf{\ui{Answer directly, without deliberating}}, in
+        \ui{Settings} $\rightarrow$ \ui{Speed}. Turn it off when you want the
+        model to think a problem through.
+\end{itemize}
+
+If a model does deliberate, the panel streams its chain of thought under
+\ui{Thinking} so you can see it working rather than hung. That text is never
+part of the answer and is never written into your document.
+
+\paragraph{A note on Max Tokens.}
+Deliberation is charged against the same output budget as the answer. A model
+that thinks for twelve thousand tokens on a four thousand token budget produces
+nothing at all --- so the default is 16{,}384, and the editor tells you plainly
+when a run ended that way rather than showing an empty result.
+
+\subsection{The inline assistant}
+\label{sec:inline}
+
+Most edits should never involve the sidebar at all. Put the cursor in a
+paragraph and press \kbd{Cmd+K}.
+
+A bar opens under the text with the passage it is about to change tinted behind
+it. You did not have to select anything: with no selection, \kbd{Cmd+K} takes
+the paragraph you are standing in, bounded by blank lines and by
+\verb|\begin|/\verb|\end|, so pressing it inside a table body works on the row
+rather than swallowing the environment. Select first if you want a different
+scope.
+
+Then either type what you want --- \emph{say this in plainer language},
+\emph{cut the hedging} --- or click one of the presets. The answer streams in,
+you get a diff, and:
+
+\begin{itemize}[leftmargin=*]
+  \item \kbd{Cmd+Enter} accepts it.
+  \item \kbd{Esc} discards it, or stops a run in progress. It works wherever
+        the keyboard focus happens to be, including after you have clicked back
+        into the document --- and there is a close button on the bar for the
+        same purpose.
+  \item \kbd{Enter} refines: type \emph{shorter}, \emph{less formal}, and it
+        runs again --- against the \emph{original} text, not its own last
+        answer, so refinements do not compound edits on top of edits.
+\end{itemize}
+
+Nothing is written until you accept, and \kbd{Cmd+Z} undoes an accept like any
+other edit.
+
+\subsection{Reading a diff}
+
+Where a line was rewritten rather than replaced wholesale, only the words that
+actually changed are tinted --- the rest of the line is dimmed:
+
+\begin{lstlisting}
+- are all coloured differently, [\verb|\begin|/\verb|\end|] blocks fold, and
++ are all coloured differently, [code] blocks fold, and
+\end{lstlisting}
+
+This matters more than it sounds. A plain line diff shows a one-word fix as a
+whole line deleted and a whole line added, and leaves you to find the
+difference yourself. Pairing only happens where it helps: if the two versions
+share no wording, or the changes are scattered across the whole line, you get
+the two plain lines instead, because a word diff there is confetti.
+
+\subsection{The loop}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Select} the passage you want changed.
+  \item Open \ui{AI} in the sidebar and pick a skill.
+  \item Press \ui{Run}. The answer streams in; the button becomes
+        \ui{Cancel} with a running timer.
+  \item \textbf{Read the diff.} Removed lines in red, added in green,
+        unchanged stretches collapsed to \texttt{$\cdots$ n unchanged lines}.
+  \item Press \ui{Apply} --- or do not.
+\end{enumerate}
+
+\subsection{Selection is the point}
+
+Before you press \ui{Run}, the panel states what it is about to send:
+\emph{selection (4 lines)}, or \emph{whole file (312 lines)}. That line is the
+one to check.
+
+With a paragraph selected, only that paragraph goes to the model, and
+\ui{Apply} writes the result back over exactly those lines --- the rest of your
+document is untouched, and you pay for a paragraph instead of a thesis. With
+nothing selected the whole file is sent, which is right for
+\ui{Generate Abstract} and wasteful for \ui{Proofread Section}.
+
+The range is captured when you press \ui{Run}, not when you press \ui{Apply}.
+You are free to scroll and click around while the model works. And if you
+switch to a different file, \ui{Apply} is disabled with a note explaining why
+--- rather than writing your revised paragraph into whatever document happens
+to be open.
+
+\subsection{Skills do different things}
+
+Skills are not interchangeable, and the panel treats them differently.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Skill kinds and what the panel offers for each}
+  \label{tab:skills}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Kind} & \textbf{Skills} & \textbf{You get} \\
+    \midrule
+    Rewrite & Proofread, Tighten, Improve Equation,   & a diff, and \ui{Apply} \\
+            & Fix Errors, Fix Bibliography            & \\[2pt]
+    Generate & Generate Table, Paste Data             & the \LaTeX, and \\
+             & $\rightarrow$ Table, Generate Abstract, & \ui{Insert at cursor} \\
+             & Executive Summary, Notes               & \\
+             & $\rightarrow$ Prose, Plain Text
+               $\rightarrow$ \LaTeX                   & \\[2pt]
+    Explain & Explain Equation, Summarize Section,    & prose, and \ui{Copy} \\
+            & Consistency Check,                      & only \\
+            & Suggest Paper Structure                 & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+There is no \ui{Apply} button on \ui{Explain Equation}, because an explanation
+is for you to read, not to paste into your paper. A diff would be meaningless
+there too, so none is shown.
+
+\subsection{It reads your project}
+
+Each skill declares what it needs to know, and the panel gathers it before
+sending --- listing what it collected under \emph{Also sends}, so the cost is
+never hidden from you.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Context attached to each skill}
+  \label{tab:context}
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Skill} & \textbf{Also sends} \\
+    \midrule
+    Proofread Section, Tighten     & labels, citation keys \\
+    Inline edit (\kbd{Cmd+K})      & preamble, labels, citation keys \\
+    Improve Equation               & preamble \\
+    Generate Table, Paste Data
+      $\rightarrow$ Table          & preamble \\
+    Notes $\rightarrow$ Prose,
+      Plain Text $\rightarrow$ \LaTeX & preamble, labels, citation keys \\
+    Fix Compilation Errors         & the errors, preamble \\
+    Fix Bibliography               & citation keys \\
+    Consistency Check              & labels \\
+    Suggest Paper Structure        & project file tree \\
+    Explain, Summarize,
+      Executive Summary            & nothing \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+This is what stops the two most irritating failure modes. A model that has been
+shown your preamble will not hand you a \verb|\toprule| for a document that
+never loaded \texttt{booktabs}. A model that has been given the keys in your
+\texttt{.bib} will cite \texttt{knuth1984} rather than inventing
+\texttt{smith2019}.
+
+\ui{Explain Equation} sends nothing extra, because nothing extra would help ---
+paying for a file tree to explain a formula is waste.
+
+\subsection{Worked example: fixing a compilation error}
+
+This is the skill where the difference is starkest, because the editor already
+has everything needed.
+
+Suppose you typed:
+
+\begin{lstlisting}
+\includegrpahics[width=0.8\textwidth]{plot.pdf}
+\end{lstlisting}
+
+Press \ui{Typeset} and \ui{Issues} reports
+\emph{Undefined control sequence}. Now:
+
+\begin{enumerate}[leftmargin=*]
+  \item Select the offending line.
+  \item \ui{AI} $\rightarrow$ \ui{Fix Compilation Errors} $\rightarrow$ \ui{Run}.
+\end{enumerate}
+
+You are not asked to paste the log. The panel shows
+\emph{Also sends: 1 error, preamble}, having taken the error straight from the
+run you just did. The diff comes back:
+
+\begin{lstlisting}
+- \includegrpahics[width=0.8\textwidth]{plot.pdf}
++ \includegraphics[width=0.8\textwidth]{plot.pdf}
+\end{lstlisting}
+
+\ui{Apply}, then \ui{Typeset}.
+
+\subsection{Worked example: tightening a paragraph}
+
+Select a paragraph you are unhappy with and run \ui{Proofread Section}. A
+typical diff:
+
+\begin{lstlisting}
+- The experiments that we ran showed good results across all
+- three of the datasets that we evaluated on.
++ Our experiments show strong results across all three datasets.
+\end{lstlisting}
+
+Because the skill also receives your labels and citation keys, a suggestion to
+cite something will name a key you actually have.
+
+Read every diff before applying. The assistant is a fast, well-informed
+copy-editor, not an authority on your argument --- and on a rewrite skill it
+will happily reword a sentence whose awkwardness was deliberate.
+
+\subsection{Copy Prompt}
+
+\ui{Copy Prompt} puts the exact prompt --- context included --- on your
+clipboard, for pasting into another tool. It is the same text \ui{Run} would
+send, so what you get elsewhere matches what you would have got here.
+
+\subsection{What it is actually good at}
+\label{sec:ai-measured}
+
+Every section of this guide was run through \ui{Proofread Section}. The results
+are worth stating plainly, because they describe the tool better than any
+feature list.
+
+\paragraph{It does not break your \LaTeX.}
+Across all six sections, every \verb|\begin| matched its \verb|\end|, and every
+\verb|\label| and \verb|\ref| came back intact. That is the property that makes
+\ui{Apply} safe to press.
+
+\paragraph{On polished prose, it finds almost nothing.}
+Six sections produced exactly one correction worth taking --- a missing comma
+between two independent clauses:
+
+\begin{lstlisting}
+- It does not upload your documents anywhere and it does not
++ It does not upload your documents anywhere, and it does not
+\end{lstlisting}
+
+Everything else was house style rather than error: serial commas, added in some
+lists and not others; and removing the spaces around em-dashes, which this
+document uses consistently, so accepting it would have made one section
+disagree with the other five. Applied wholesale, those edits would have left
+the guide \emph{less} consistent than it started.
+
+\paragraph{Watch for reflowing.}
+The largest ``change'' was not a change at all. On one section the model
+returned text that was word-for-word identical to the input, rewrapped onto
+different lines --- forty-eight changed lines, no difference in the PDF. The
+skills now instruct the model to preserve line breaks, which reduced that to
+zero, but it is the failure mode to recognise: a diff that is enormous and
+entirely uniform is usually reflowing, not editing.
+
+\paragraph{So what is it for?}
+Mechanics, on text that is still rough. A first draft, notes pasted in from
+elsewhere, a paragraph written at midnight --- there it earns its place
+immediately. On prose you have already revised twice, expect it to propose
+preferences and expect to decline most of them. That is not a failure of the
+model; it is what running a copy-editor over clean copy looks like.
+
+Which is why every rewrite skill ends in a diff and a button. Judge each
+changed line on its own: accepting a whole rewrite because most of it is
+harmless is how a document loses its voice one paragraph at a time.
+
+\subsection{When it goes wrong}
+
+If a request fails, the error appears in its own red panel and the result area
+stays empty --- an error never masquerades as output you might paste into your
+document. \ui{Cancel} stops a run in progress and keeps whatever streamed in so
+far, in case the useful part arrived early.

@@ -10,6 +10,7 @@ use axum::{
 use futures::stream::Stream;
 use serde_json::Value;
 use std::convert::Infallible;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
@@ -28,13 +29,28 @@ pub async fn start_server(port: u16, state: SharedState) {
         .route("/mcp", post(handle_mcp_post))
         .route("/mcp/sse", get(handle_mcp_sse))
         .layer(cors)
-        .with_state(state);
+        .with_state(Arc::clone(&state));
 
     let addr = format!("127.0.0.1:{}", port);
-    log::info!("MCP server starting on http://{}", addr);
+    state.port.store(port, Ordering::Relaxed);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    // Report the bind result instead of unwrapping: a port collision used to
+    // panic this task while the UI kept showing a green "running" dot.
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            log::error!("MCP server could not bind {}: {}", addr, e);
+            return;
+        }
+    };
+
+    log::info!("MCP server listening on http://{}", addr);
+    state.listening.store(true, Ordering::Relaxed);
+
+    if let Err(e) = axum::serve(listener, app).await {
+        log::error!("MCP server stopped: {}", e);
+    }
+    state.listening.store(false, Ordering::Relaxed);
 }
 
 async fn handle_mcp_post(

@@ -28,10 +28,12 @@ export const PROVIDERS: ProviderConfig[] = [
     name: "Anthropic (Claude)",
     baseUrl: "https://api.anthropic.com/v1/messages",
     apiDocs: "https://console.anthropic.com/keys",
+    // Current aliases — do not append date suffixes, these IDs are complete.
     models: [
-      { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-      { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
-      { id: "claude-haiku-3.5-sonnet-20250514", name: "Claude Haiku 3.5" },
+      { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
+      { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
+      { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
+      { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
     ],
     requiresApiKey: true,
     headers: {
@@ -57,7 +59,8 @@ export const PROVIDERS: ProviderConfig[] = [
     apiDocs: "https://openrouter.ai/keys",
     models: [
       { id: "openai/gpt-4o", name: "GPT-4o" },
-      { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4" },
+      { id: "anthropic/claude-opus-4-8", name: "Claude Opus 4.8" },
+      { id: "anthropic/claude-sonnet-5", name: "Claude Sonnet 5" },
       { id: "deepseek/deepseek-chat", name: "DeepSeek V3" },
       { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
       { id: "x-ai/grok-4", name: "Grok 4" },
@@ -81,11 +84,14 @@ export const PROVIDERS: ProviderConfig[] = [
     name: "OpenCode Go",
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     apiDocs: "https://opencode.ai/auth",
+    // Fast model first: selecting a provider auto-picks models[0], and skills
+    // run on small passages where a reasoning model costs ~3x the wait for
+    // substantially the same edit.
     models: [
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
       { id: "glm-5.2", name: "GLM-5.2" },
       { id: "kimi-k2.7-code", name: "Kimi K2.7 Code" },
-      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (reasoning, slower)" },
       { id: "mimo-v2.5", name: "MiMo V2.5" },
       { id: "qwen3.7-max", name: "Qwen 3.7 Max" },
       { id: "qwen3.7-plus", name: "Qwen 3.7 Plus" },
@@ -117,6 +123,8 @@ export interface AppSettings {
   theme: "dark" | "light";
   autoCompile: boolean;
   mcpPort: number;
+  firstRunCompleted?: boolean;
+  reduceReasoning?: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -124,8 +132,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   activeModel: "gpt-4o-mini",
   apiKeys: {},
   temperature: 0.7,
-  maxTokens: 4096,
+  maxTokens: 16384,
   theme: "dark",
   autoCompile: false,
   mcpPort: 9876,
+  firstRunCompleted: false,
+  reduceReasoning: true,
 };

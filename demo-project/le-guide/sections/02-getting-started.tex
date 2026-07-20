@@ -1,0 +1,83 @@
+\section{Getting started}
+\label{sec:start}
+
+\subsection{Your first typeset}
+
+Do this now, with the document you are reading.
+
+\begin{enumerate}[leftmargin=*]
+  \item Click \ui{Open project} in the toolbar and choose the folder
+        containing this file (\path{demo-project/le-guide}).
+  \item In the \ui{Files} panel, click \texttt{main.tex}.
+  \item Press \kbd{Cmd+Enter}, or click \ui{Typeset}.
+\end{enumerate}
+
+The PDF appears on the right. The \ui{Issues} panel along the bottom fills with
+anything the run reported.
+
+\subsection{You will need to press it twice}
+\label{sec:passes}
+
+The first build of this guide produces a document whose table of contents is
+empty and whose cross-references read \texttt{??}. Press \ui{Typeset} again and
+both fill in.
+
+That is not a bug, and it is not specific to this editor --- it is how \LaTeX{}
+works. Cross-references, the table of contents and page numbers are written to
+an auxiliary file on one pass and read back on the next. Tools like
+\texttt{latexmk} hide this by re-running the compiler until the output settles.
+LaTeXEditor runs \emph{one} pass per press, which is faster and makes the error
+output easier to read, but leaves the second press to you.
+
+Two practical consequences:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Cross-references and the ToC need two presses} after they
+        change. Just press \ui{Typeset} again.
+  \item \textbf{BibTeX and Biber are not run.} A \verb|\bibliography{refs}|
+        will never resolve, because the editor does not invoke a second
+        program. This guide therefore uses a \texttt{thebibliography}
+        environment written directly into \texttt{main.tex}, which resolves in
+        a single pass. If your project needs full BibTeX, run it once in a
+        terminal, then carry on typesetting here.
+\end{itemize}
+
+If you would rather have the loop handled for you, select \texttt{latexmk} in
+the compiler menu --- it performs its own re-runs internally.
+
+\subsection{Where the output goes}
+
+Everything the compiler emits --- \texttt{.pdf}, \texttt{.aux}, \texttt{.log},
+\texttt{.toc} --- is written to a \texttt{build/} folder beside your project,
+never next to your sources. Your project folder stays readable.
+
+\subsection{Which file gets typeset}
+
+Not, in general, the one you are looking at. Before each run the editor scans
+the project for the \texttt{.tex} file containing \verb|\documentclass| and
+typesets \emph{that}.
+
+This is what you want in a multi-file project. Editing
+\texttt{sections/03-writing.tex} and pressing \ui{Typeset} builds
+\texttt{main.tex}, which pulls the section back in via \verb|\input|. You never
+have to navigate back to the root file to build.
+
+\subsection{Saving}
+
+There is no save button and you rarely need \kbd{Cmd+S}. The editor writes your
+file one second after you stop typing. A dot beside the filename in the toolbar
+means there are changes not yet on disk; it disappears when they are. Switching
+files flushes any pending write immediately, so edits made in the last second
+before you click away are not lost.
+
+Turn on \ui{Auto} in the toolbar and every save also triggers a typeset --- a
+tight write-and-see loop, at the cost of a compiler run every time you pause.
+
+\subsection{Starting from a template}
+
+\ui{New from template} offers a gallery: Basic Article, IEEE Conference Paper,
+ACM Paper, Thesis/Dissertation, Beamer Presentation, CV/Resume, Cover Letter and
+Homework/Problem Set. Choosing one writes a complete, compiling project into
+your current folder and opens its main file. It is a faster start
+than an empty buffer, and a reasonable way to see how a document class you have
+not used before is normally set up.

@@ -8,21 +8,24 @@ import {
   findRootFile,
 } from "../../hooks/useTauriCommands";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Icon, type IconName } from "../icons";
 
 interface Props {
   onNewFromTemplate: () => void;
   onOpenPlugins: () => void;
   onOpenSettings: () => void;
   compileRef: React.MutableRefObject<() => void>;
+  openProjectRef: React.MutableRefObject<() => void>;
 }
 
-export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettings, compileRef }: Props) {
+export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettings, compileRef, openProjectRef }: Props) {
   const {
     projectPath,
     activeFilePath,
     isDirty,
     isCompiling,
     compilers,
+    compilersChecked,
     selectedCompiler,
     autoCompile,
     setProjectPath,
@@ -33,17 +36,18 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
     setCompileBadboxes,
     setCompileMessage,
     setIsCompiling,
-    setCompilers,
     setSelectedCompiler,
     setAutoCompile,
   } = useAppStore();
 
   useEffect(() => {
+    // Store setters are stable, so reading them off the store keeps this a
+    // genuine run-once effect without lying to the deps linter.
     checkCompilers().then((found) => {
-      setCompilers(found);
       const state = useAppStore.getState();
+      state.setCompilers(found);
       if (found.length > 0 && !state.selectedCompiler) {
-        setSelectedCompiler(found[0]);
+        state.setSelectedCompiler(found[0]);
       }
     });
   }, []);
@@ -129,6 +133,7 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
   ]);
 
   useEffect(() => { compileRef.current = handleCompile; }, [handleCompile, compileRef]);
+  useEffect(() => { openProjectRef.current = handleOpenProject; }, [handleOpenProject, openProjectRef]);
 
   const handleKeyboardCompile = useCallback(
     (e: KeyboardEvent) => {
@@ -145,50 +150,58 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
     return () => window.removeEventListener("keydown", handleKeyboardCompile);
   }, [handleKeyboardCompile]);
 
-  return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-gray-800 border-b border-gray-700">
-      <button
-        onClick={handleOpenProject}
-        className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
-      >
-        Open Project
-      </button>
+  const fileName = activeFilePath?.split("/").pop();
+  // Detection has run and turned up nothing — typesetting is impossible.
+  const noCompiler = compilersChecked && compilers.length === 0;
 
-      {projectPath && (
-        <>
-          <span className="text-xs text-gray-500 truncate max-w-[200px]">
-            {projectPath.split("/").pop()}
-          </span>
-          <button
-            onClick={onNewFromTemplate}
-            className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
-          >
-            New from Template
-          </button>
-        </>
-      )}
+  return (
+    <header className="flex items-center gap-2 px-3 h-12 shrink-0 bg-raised border-b border-edge">
+      {/* Identity: the document is the subject, so it gets the serif treatment. */}
+      <div className="flex items-baseline gap-2 min-w-0 shrink pr-2">
+        {projectPath ? (
+          <>
+            <span className="font-serif text-title text-ink truncate max-w-[220px]">
+              {projectPath.split("/").pop()}
+            </span>
+            {fileName && (
+              <>
+                <span className="text-ink-3 select-none">›</span>
+                <span className="text-tiny text-ink-2 font-mono truncate max-w-[200px]">
+                  {fileName}
+                </span>
+              </>
+            )}
+            {isDirty && activeFilePath && (
+              <span
+                title="Unsaved changes"
+                className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 self-center"
+              />
+            )}
+          </>
+        ) : (
+          <span className="font-serif text-title text-ink-3">No project open</span>
+        )}
+      </div>
 
       <div className="flex-1" />
 
-      <button
-        onClick={onOpenPlugins}
-        className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
-      >
-        Plugins
-      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        <ToolbarButton onClick={handleOpenProject} icon="folder-open" label="Open project" />
+        {projectPath && (
+          <ToolbarButton onClick={onNewFromTemplate} icon="template" label="New from template" />
+        )}
+        <ToolbarButton onClick={onOpenPlugins} icon="plug" label="Plugins" />
+        <ToolbarButton onClick={onOpenSettings} icon="settings" label="Settings" />
+      </div>
 
-      <button
-        onClick={onOpenSettings}
-        className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors"
-      >
-        Settings
-      </button>
+      <div className="w-px h-5 bg-edge mx-1.5 shrink-0" />
 
       {compilers.length > 0 && (
         <select
           value={selectedCompiler}
           onChange={(e) => setSelectedCompiler(e.target.value)}
-          className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded"
+          title="LaTeX compiler"
+          className="bg-base text-ink-2 text-tiny font-mono px-2 h-7 rounded-md border border-edge hover:border-edge-strong cursor-pointer transition-colors shrink-0"
         >
           {compilers.map((c) => (
             <option key={c} value={c}>
@@ -198,38 +211,71 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
         </select>
       )}
 
-      <label className="flex items-center gap-1.5 text-xs text-gray-400">
+      <label
+        title="Recompile automatically after each save"
+        className={`flex items-center gap-1.5 text-tiny h-7 px-2 rounded-md border cursor-pointer transition-colors shrink-0 ${
+          autoCompile
+            ? "text-accent border-accent/40 bg-accent-subtle"
+            : "text-ink-3 border-edge hover:text-ink-2 hover:border-edge-strong"
+        }`}
+      >
         <input
           type="checkbox"
           checked={autoCompile}
           onChange={(e) => setAutoCompile(e.target.checked)}
-          className="w-3 h-3"
+          className="sr-only"
         />
+        <Icon name={autoCompile ? "check" : "refresh"} size={13} />
         Auto
       </label>
 
       <button
         onClick={handleCompile}
-        disabled={!activeFilePath || isCompiling}
-        className={`px-4 py-1 text-xs font-medium rounded transition-colors ${
-          !activeFilePath || isCompiling
-            ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-            : "bg-blue-600 hover:bg-blue-500 text-white"
+        disabled={!activeFilePath || isCompiling || noCompiler}
+        title={
+          noCompiler
+            ? "No LaTeX distribution found — install TeX Live, MacTeX or MiKTeX"
+            : "Typeset (Cmd+Enter)"
+        }
+        className={`flex items-center gap-1.5 h-7 px-3 text-tiny font-medium rounded-md transition-colors shrink-0 ${
+          !activeFilePath || isCompiling || noCompiler
+            ? "bg-hover text-ink-3 cursor-not-allowed"
+            : "bg-accent hover:bg-accent-hover text-accent-fg"
         }`}
       >
         {isCompiling ? (
-          <span className="flex items-center gap-1">
-            <span className="animate-spin inline-block w-3 h-3 border border-white/30 border-t-white rounded-full" />
-            Compiling
-          </span>
+          <>
+            <span className="animate-spin inline-block w-3 h-3 border-[1.5px] border-current/30 border-t-current rounded-full" />
+            Typesetting
+          </>
         ) : (
-          "Compile"
+          <>
+            <Icon name="play" size={12} />
+            Typeset
+          </>
         )}
       </button>
+    </header>
+  );
+}
 
-      {isDirty && activeFilePath && (
-        <span className="text-xs text-yellow-500">Unsaved</span>
-      )}
-    </div>
+function ToolbarButton({
+  onClick,
+  icon,
+  label,
+}: {
+  onClick: () => void;
+  icon: IconName;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="grid place-items-center w-7 h-7 rounded-md text-ink-2 hover:text-ink hover:bg-hover transition-colors"
+    >
+      <Icon name={icon} size={16} />
+    </button>
   );
 }

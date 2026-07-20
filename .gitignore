@@ -29,3 +29,19 @@ src-tauri/gen/
 
 # Build output
 *.dmg
+
+# LaTeX build output. The editor writes everything to build/, so that line does
+# most of the work — the rest catches output from a manual pdflatex run.
+build/
+*.aux
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+
+# Local app state. API keys live in ~/.latex-editor/settings.json, outside the
+# repo by design — this is belt and braces in case that ever moves.
+.latex-editor/

@@ -10,6 +10,7 @@
     "tauri:build": "tauri build",
     "install": "tauri build && cp -rf src-tauri/target/release/bundle/macos/LaTeXEditor.app /Applications/ && open /Applications/LaTeXEditor.app",
     "lint": "oxlint",
+    "test": "for f in src/lib/*.check.ts; do node --experimental-strip-types \"$f\" || exit 1; done && cd src-tauri && cargo test --lib",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -22,5 +22,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // *.check.ts are standalone `node --experimental-strip-types` scripts, not
+  // part of the bundle — they use node globals the app deliberately excludes.
+  "exclude": ["src/**/*.check.ts"]
 }

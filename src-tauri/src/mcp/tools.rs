@@ -81,10 +81,10 @@ pub fn get_tools() -> Vec<Tool> {
                 properties: Some(json!({
                     "root": {
                         "type": "string",
-                        "description": "Project root directory path"
+                        "description": "Project root. Optional — defaults to the project currently open in the editor."
                     }
                 })),
-                required: Some(vec!["root".to_string()]),
+                required: Some(vec![]),
             },
         },
         Tool {
@@ -116,7 +116,7 @@ pub async fn call_tool(
         "write_file" => handle_write_file(&args, &project_path).await,
         "compile" => handle_compile(&args, &project_path).await,
         "get_errors" => handle_get_errors(&args).await,
-        "get_project_structure" => handle_get_structure(&args).await,
+        "get_project_structure" => handle_get_structure(&args, &project_path).await,
         "get_section_structure" => handle_section_structure(&args, &project_path).await,
         _ => CallToolResult {
             content: vec![ToolContent {
@@ -293,8 +293,39 @@ async fn handle_get_errors(args: &Value) -> CallToolResult {
     }
 }
 
-async fn handle_get_structure(args: &Value) -> CallToolResult {
-    let root = args.get("root").and_then(|v| v.as_str()).unwrap_or("");
+async fn handle_get_structure(
+    args: &Value,
+    project_path: &Arc<Mutex<Option<String>>>,
+) -> CallToolResult {
+    // Every other tool resolves against the open project; this one used to
+    // demand an explicit root, so an agent that simply asked "what is in this
+    // project?" got "Directory not found". Accept `path` as well — the other
+    // five tools all use that name, and guessing wrong is a silent failure.
+    let explicit = args
+        .get("root")
+        .or_else(|| args.get("path"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let root = match explicit {
+        Some(r) => r.to_string(),
+        None => match project_path.lock().await.clone() {
+            Some(open) => open,
+            None => {
+                return CallToolResult {
+                    content: vec![ToolContent {
+                        content_type: "text".to_string(),
+                        text: Some(
+                            "No project is open in the editor. Pass `root`, or open a project first."
+                                .to_string(),
+                        ),
+                    }],
+                    is_error: Some(true),
+                }
+            }
+        },
+    };
+    let root = root.as_str();
     match open_project(root.to_string()).await {
         Ok(tree) => CallToolResult {
             content: vec![ToolContent {

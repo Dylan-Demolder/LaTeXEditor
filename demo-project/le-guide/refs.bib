@@ -1,0 +1,40 @@
+% Bibliography database for the LaTeXEditor guide.
+%
+% main.tex uses a `thebibliography` environment rather than \bibliography{refs},
+% because the editor runs a single compiler pass and never invokes BibTeX or
+% Biber — a \bibliography call would leave every citation unresolved.
+%
+% This file is still worth having: the AI assistant reads every .bib in the
+% project and passes the keys below as context, so skills that write citations
+% reference entries that actually exist instead of inventing them. Try it —
+% select a paragraph and run Proofread Section; the panel will report
+% "Also sends: … 3 citation keys".
+
+@book{knuth1984,
+  author    = {Knuth, Donald E.},
+  title     = {The {\TeX}book},
+  publisher = {Addison-Wesley},
+  year      = {1984},
+  address   = {Reading, Massachusetts},
+  isbn      = {0-201-13447-0}
+}
+
+@book{lamport1994,
+  author    = {Lamport, Leslie},
+  title     = {{\LaTeX}: A Document Preparation System},
+  publisher = {Addison-Wesley},
+  year      = {1994},
+  edition   = {2nd},
+  address   = {Reading, Massachusetts},
+  isbn      = {0-201-52983-1}
+}
+
+@book{mittelbach2004,
+  author    = {Mittelbach, Frank and Goossens, Michel},
+  title     = {The {\LaTeX} Companion},
+  publisher = {Addison-Wesley},
+  year      = {2004},
+  edition   = {2nd},
+  address   = {Boston},
+  isbn      = {0-201-36299-6}
+}

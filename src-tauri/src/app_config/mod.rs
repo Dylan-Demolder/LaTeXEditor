@@ -21,6 +21,17 @@ pub struct AppSettings {
     pub autocompile: bool,
     #[serde(rename = "mcpPort", default = "default_mcp_port")]
     pub mcp_port: u16,
+    /// Set once the guide has been offered, so it opens on first launch only.
+    #[serde(rename = "firstRunCompleted", default)]
+    pub first_run_completed: bool,
+    /// Ask the model not to deliberate before answering. Skills work on short
+    /// passages where thinking costs multiples of the latency for the same edit.
+    #[serde(rename = "reduceReasoning", default = "default_reduce_reasoning")]
+    pub reduce_reasoning: bool,
+}
+
+fn default_reduce_reasoning() -> bool {
+    true
 }
 
 fn default_active_provider() -> String {
@@ -33,7 +44,7 @@ fn default_temperature() -> f64 {
     0.7
 }
 fn default_max_tokens() -> u32 {
-    4096
+    16384
 }
 fn default_theme() -> String {
     "dark".to_string()
@@ -53,6 +64,8 @@ impl Default for AppSettings {
             theme: default_theme(),
             autocompile: false,
             mcp_port: default_mcp_port(),
+            first_run_completed: false,
+            reduce_reasoning: default_reduce_reasoning(),
         }
     }
 }

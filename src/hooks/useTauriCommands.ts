@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
+import { useAppStore } from "../stores/useAppStore";
 import type {
   CompileCommandResult,
   OpenProjectResult,
@@ -6,6 +7,18 @@ import type {
 
 export async function openProject(projectPath: string): Promise<OpenProjectResult> {
   return invoke<OpenProjectResult>("open_project", { projectPath });
+}
+
+/**
+ * Re-scan the open project and refresh the file tree. Call after any command
+ * that changes what is on disk — the backend has no watcher, so a tree that is
+ * not refreshed keeps showing files that were renamed or deleted.
+ */
+export async function refreshFiles(): Promise<void> {
+  const { projectPath, setFiles } = useAppStore.getState();
+  if (!projectPath) return;
+  const result = await openProject(projectPath);
+  setFiles(result.files);
 }
 
 export async function readFile(filePath: string): Promise<string> {
@@ -64,12 +77,14 @@ export async function setMcpProject(
   });
 }
 
-export async function getMcpStatus(): Promise<{
+export interface McpStatus {
   port: number;
   running: boolean;
   endpoint: string;
   sse_endpoint: string;
-}> {
+}
+
+export async function getMcpStatus(): Promise<McpStatus> {
   return invoke("get_mcp_status");
 }
 
@@ -108,9 +123,68 @@ export async function callAi(req: AiCallRequest): Promise<AiCallResponse> {
       system_prompt: req.systemPrompt,
       user_prompt: req.userPrompt,
       temperature: req.temperature || 0.7,
-      max_tokens: req.maxTokens || 4096,
+      max_tokens: req.maxTokens || 16384,
     },
   });
+}
+
+type StreamEvent =
+  | { type: "chunk"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "done"; cancelled: boolean }
+  | { type: "error"; message: string };
+
+/**
+ * Streaming counterpart to `callAi`. Chunks arrive via `onChunk` as they are
+ * generated; resolves with the assembled text and whether the user cancelled.
+ */
+export async function callAiStream(
+  req: AiCallRequest,
+  onChunk: (text: string) => void,
+  /** Reasoning-model thinking tokens — progress only, never the answer. */
+  onReasoning?: (text: string) => void
+): Promise<{ content: string; cancelled: boolean }> {
+  const channel = new Channel<StreamEvent>();
+  let content = "";
+  let cancelled = false;
+
+  channel.onmessage = (event) => {
+    if (event.type === "chunk") {
+      content += event.text;
+      onChunk(event.text);
+    } else if (event.type === "reasoning") {
+      onReasoning?.(event.text);
+    } else if (event.type === "done") {
+      cancelled = event.cancelled;
+    }
+  };
+
+  await invoke<void>("call_ai_stream", {
+    request: {
+      provider: req.provider,
+      model: req.model,
+      system_prompt: req.systemPrompt,
+      user_prompt: req.userPrompt,
+      temperature: req.temperature ?? 0.7,
+      max_tokens: req.maxTokens ?? 16384,
+    },
+    onEvent: channel,
+  });
+
+  return { content, cancelled };
+}
+
+/**
+ * Materialise the bundled guide into a writable folder and return its path.
+ * Leaves an existing copy untouched, so edits survive.
+ */
+export async function ensureSampleProject(): Promise<string> {
+  return invoke<string>("ensure_sample_project");
+}
+
+/** Ask the in-flight streaming call to stop. */
+export async function cancelAi(): Promise<void> {
+  return invoke<void>("cancel_ai");
 }
 
 export interface AppSettings {
@@ -122,6 +196,8 @@ export interface AppSettings {
   theme: "dark" | "light";
   autoCompile: boolean;
   mcpPort: number;
+  firstRunCompleted?: boolean;
+  reduceReasoning?: boolean;
 }
 
 export async function loadSettings(): Promise<AppSettings> {

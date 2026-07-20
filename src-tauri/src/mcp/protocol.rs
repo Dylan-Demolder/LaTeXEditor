@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::atomic::{AtomicBool, AtomicU16};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -142,6 +143,11 @@ pub struct ToolContent {
 pub struct McpState {
     pub project_path: Arc<Mutex<Option<String>>>,
     pub active_file: Arc<Mutex<Option<String>>>,
+    /// Whether the server actually bound its port. Reported to the UI so the
+    /// status indicator reflects reality instead of always claiming "running".
+    pub listening: Arc<AtomicBool>,
+    /// The port it bound, or the port it failed to bind.
+    pub port: Arc<AtomicU16>,
 }
 
 impl McpState {
@@ -149,6 +155,8 @@ impl McpState {
         Self {
             project_path: Arc::new(Mutex::new(None)),
             active_file: Arc::new(Mutex::new(None)),
+            listening: Arc::new(AtomicBool::new(false)),
+            port: Arc::new(AtomicU16::new(0)),
         }
     }
 }

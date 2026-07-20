@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
-import { readFile, renameFile } from "../../hooks/useTauriCommands";
+import {
+  readFile,
+  renameFile,
+  deleteFile,
+  createDirectory,
+  writeFile,
+  refreshFiles,
+} from "../../hooks/useTauriCommands";
 import type { FileEntry } from "../../types";
+import { Icon } from "../icons";
+import { fileIcon } from "../../lib/file-icons";
 
 const TEX_EXTENSIONS = new Set([".tex", ".sty", ".cls", ".bib", ".bst"]);
 const IMAGE_EXTENSIONS = new Set([".pdf", ".png", ".jpg", ".jpeg", ".eps", ".svg"]);
@@ -21,14 +30,8 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".cfg",
 ]);
 
-function getFileIcon(entry: FileEntry): string {
-  if (entry.is_dir) return "📁";
-  if (!entry.extension) return "📄";
-  if (TEX_EXTENSIONS.has(`.${entry.extension}`)) return "📝";
-  if (entry.extension === "pdf") return "📕";
-  if (IMAGE_EXTENSIONS.has(`.${entry.extension}`)) return "🖼️";
-  if (entry.extension === "log") return "📋";
-  return "📄";
+function parentOf(path: string): string {
+  return path.substring(0, path.lastIndexOf("/"));
 }
 
 function FileTreeItem({
@@ -40,9 +43,11 @@ function FileTreeItem({
   depth: number;
   onSelect: (path: string) => void;
 }) {
-  const { expandedDirs, toggleDir, activeFilePath } = useAppStore();
+  const { expandedDirs, toggleDir, activeFilePath, setActiveFile, setActiveFileContent } =
+    useAppStore();
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(entry.name);
+  const [error, setError] = useState<string | null>(null);
 
   const isExpanded = expandedDirs.has(entry.path);
   const isActive = activeFilePath === entry.path;
@@ -56,51 +61,118 @@ function FileTreeItem({
   };
 
   const handleRename = async () => {
-    if (newName && newName !== entry.name) {
-      const parent = entry.path.substring(0, entry.path.lastIndexOf("/"));
-      const newPath = `${parent}/${newName}`;
-      try {
-        await renameFile(entry.path, newPath);
-      } catch (e) {
-        console.error("Rename failed:", e);
-      }
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === entry.name) {
+      setNewName(entry.name);
+      setRenaming(false);
+      return;
+    }
+    const newPath = `${parentOf(entry.path)}/${trimmed}`;
+    try {
+      await renameFile(entry.path, newPath);
+      // The open file moved with it; keep the editor pointed at the new path.
+      if (activeFilePath === entry.path) setActiveFile(newPath);
+      await refreshFiles();
+    } catch (e) {
+      setNewName(entry.name);
+      setError(String(e));
     }
     setRenaming(false);
+  };
+
+  const handleDelete = async () => {
+    const what = entry.is_dir ? `folder "${entry.name}" and everything in it` : `"${entry.name}"`;
+    if (!window.confirm(`Delete ${what}? This cannot be undone.`)) return;
+    try {
+      await deleteFile(entry.path);
+      if (activeFilePath === entry.path) {
+        setActiveFile(null);
+        setActiveFileContent("");
+      }
+      await refreshFiles();
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-gray-700/50 text-sm ${
-          isActive ? "bg-blue-800/50 text-blue-200" : "text-gray-300"
+        className={`group flex items-center gap-1.5 pr-2 h-7 cursor-pointer rounded-md text-bodyall transition-colors ${
+          isActive
+            ? "bg-accent-subtle text-accent"
+            : "text-ink-2 hover:bg-hover hover:text-ink"
         }`}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        style={{ paddingLeft: `${depth * 14 + 6}px` }}
         onClick={handleClick}
       >
         {entry.is_dir && (
-          <span className="text-xs w-3 text-gray-500">
-            {isExpanded ? "▾" : "▸"}
-          </span>
+          <Icon
+            name="chevron-right"
+            size={12}
+            className={`text-ink-3 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+          />
         )}
-        {!entry.is_dir && <span className="w-3" />}
-        <span className="text-xs">{getFileIcon(entry)}</span>
+        {!entry.is_dir && <span className="w-3 shrink-0" />}
+        <Icon
+          name={fileIcon(entry.extension, entry.is_dir, isExpanded)}
+          size={15}
+          className={entry.is_dir ? "text-ink-3" : "text-ink-3"}
+        />
         {renaming ? (
           <input
-            className="flex-1 bg-gray-700 text-gray-200 text-xs px-1 py-0 rounded outline-none"
+            className="flex-1 min-w-0 bg-overlay text-ink text-bodyall px-1.5 py-0.5 rounded border border-accent outline-none"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onBlur={handleRename}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleRename();
-              if (e.key === "Escape") setRenaming(false);
+              if (e.key === "Escape") {
+                setNewName(entry.name);
+                setRenaming(false);
+              }
             }}
             autoFocus
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="truncate text-xs">{entry.name}</span>
+          <>
+            <span className="truncate flex-1">{entry.name}</span>
+            <span className="hidden group-hover:flex items-center gap-0.5">
+              <button
+                title="Rename"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNewName(entry.name);
+                  setRenaming(true);
+                }}
+                className="grid place-items-center w-5 h-5 rounded text-ink-3 hover:text-ink hover:bg-hover"
+              >
+                <Icon name="pencil" size={12} />
+              </button>
+              <button
+                title="Delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete();
+                }}
+                className="grid place-items-center w-5 h-5 rounded text-ink-3 hover:text-danger hover:bg-hover"
+              >
+                <Icon name="trash" size={12} />
+              </button>
+            </span>
+          </>
         )}
       </div>
+      {error && (
+        <div
+          className="text-tiny text-danger px-2 py-0.5 truncate cursor-pointer"
+          style={{ paddingLeft: `${depth * 16 + 24}px` }}
+          onClick={() => setError(null)}
+        >
+          {error}
+        </div>
+      )}
       {entry.is_dir && isExpanded && entry.children && (
         <div>
           {entry.children.map((child) => (
@@ -118,7 +190,9 @@ function FileTreeItem({
 }
 
 export default function FileTree() {
-  const { files, setActiveFile, setActiveFileContent } = useAppStore();
+  const { files, projectPath, activeFilePath, setActiveFile, setActiveFileContent } =
+    useAppStore();
+  const [error, setError] = useState<string | null>(null);
 
   const handleSelect = async (path: string) => {
     try {
@@ -126,18 +200,74 @@ export default function FileTree() {
       setActiveFile(path);
       setActiveFileContent(content);
     } catch (e) {
-      console.error("Failed to read file:", e);
+      setError(`Failed to read file: ${e}`);
+    }
+  };
+
+  // New items land next to the open file, or at the project root if none.
+  const targetDir = activeFilePath ? parentOf(activeFilePath) : projectPath;
+
+  const handleNewFile = async () => {
+    if (!targetDir) return;
+    const name = window.prompt("New file name", "untitled.tex");
+    if (!name?.trim()) return;
+    const path = `${targetDir}/${name.trim()}`;
+    try {
+      await writeFile(path, "");
+      await refreshFiles();
+      setActiveFile(path);
+      setActiveFileContent("");
+    } catch (e) {
+      setError(`Failed to create file: ${e}`);
+    }
+  };
+
+  const handleNewFolder = async () => {
+    if (!targetDir) return;
+    const name = window.prompt("New folder name", "section");
+    if (!name?.trim()) return;
+    try {
+      await createDirectory(`${targetDir}/${name.trim()}`);
+      await refreshFiles();
+    } catch (e) {
+      setError(`Failed to create folder: ${e}`);
     }
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-gray-850">
-      <div className="px-3 py-1.5 bg-gray-800 border-b border-gray-700 text-gray-300 text-xs font-medium">
-        Files
+    <div className="h-full w-full flex flex-col bg-base">
+      <div className="flex items-center justify-between pl-3 pr-1.5 h-8 shrink-0 border-b border-edge">
+        <span className="panel-label">Files</span>
+        {projectPath && (
+          <div className="flex items-center gap-0.5">
+            <button onClick={handleNewFile} title="New file" className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover transition-colors">
+              <Icon name="plus" size={15} />
+            </button>
+            <button onClick={handleNewFolder} title="New folder" className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover transition-colors">
+              <Icon name="folder-plus" size={15} />
+            </button>
+            <button
+              onClick={() => refreshFiles().catch((e) => setError(String(e)))}
+              title="Refresh"
+              className="grid place-items-center w-6 h-6 rounded text-ink-3 hover:text-ink hover:bg-hover transition-colors"
+            >
+              <Icon name="refresh" size={15} />
+            </button>
+          </div>
+        )}
       </div>
-      <div className="flex-1 overflow-y-auto py-1">
+      {error && (
+        <div
+          className="px-3 py-1.5 text-tiny text-danger bg-danger-subtle cursor-pointer"
+          onClick={() => setError(null)}
+          title="Click to dismiss"
+        >
+          {error}
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-1.5">
         {files.length === 0 ? (
-          <div className="px-4 py-4 text-gray-500 text-xs">
+          <div className="px-4 py-6 text-ink-3 text-tiny text-center">
             Open a project folder to browse files
           </div>
         ) : (

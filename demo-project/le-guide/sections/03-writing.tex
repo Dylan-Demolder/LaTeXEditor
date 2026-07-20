@@ -1,0 +1,99 @@
+\section{Writing}
+\label{sec:writing}
+
+\subsection{The editor}
+
+The editing surface is Monaco --- the engine behind VS Code --- with a LaTeX
+grammar written for this app. Commands, env names, maths and comments
+are all coloured differently, \verb|\begin|/\verb|\end| blocks fold, and
+\kbd{Cmd+/} comments the current line.
+
+The editor's colours come from the same palette as the rest of the interface,
+so switching between the dark and light themes in \ui{Settings} restyles the
+editor along with everything else, rather than leaving a dark rectangle in a
+light window.
+
+\subsection{Snippets}
+
+Start typing a construct's name and the completion list appears; press
+\kbd{Tab} to move between the placeholders it leaves behind. Typing
+\texttt{figure} and accepting the suggestion gives you:
+
+\begin{lstlisting}
+\begin{figure}[htbp]
+	\centering
+	\includegraphics[width=0.8\textwidth]{path}
+	\caption{caption}
+	\label{fig:label}
+\end{figure}
+\end{lstlisting}
+
+with the cursor on \texttt{0.8\textbackslash textwidth} and \kbd{Tab} stepping
+through the rest. The full set covers \texttt{begin}, \texttt{frac},
+\texttt{sqrt}, \texttt{sum}, \texttt{int}, \texttt{lim}, \texttt{prod},
+\texttt{section}, \texttt{subsection}, \texttt{itemize}, \texttt{enumerate},
+\texttt{figure}, \texttt{table}, \texttt{align}, \texttt{matrix},
+\texttt{cases}, \texttt{cite}, \texttt{ref}, and the text-formatting commands.
+
+\subsection{The component library}
+
+Snippets are skeletons; components are filled-in blocks. Open \ui{Components}
+in the sidebar, pick one, complete the form, and press \ui{Insert} to place the
+generated \LaTeX{} at your cursor.
+
+\begin{table}[htbp]
+  \centering
+  \caption{What the component library offers}
+  \label{tab:components}
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Category} & \textbf{Examples} \\
+    \midrule
+    Mathematics        & numbered and aligned equations, matrices, cases, theorems \\
+    Tables             & basic and publication tables with \texttt{booktabs} rules \\
+    Figures            & single figures, side-by-side subfigures, Ti\emph{k}Z diagrams \\
+    Lists              & itemised and enumerated lists \\
+    Structure          & sections, abstracts \\
+    Code               & source listings, algorithm and pseudocode blocks \\
+    Bibliography       & article and book Bib\TeX{} entries \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Use the library when you want a correct starting point for something fiddly ---
+a \texttt{booktabs} table with the rules in the right places, or a subfigure
+pair with aligned captions --- and snippets when you already know the shape and
+just want the keystrokes saved.
+
+\subsection{Moving around a document}
+
+The \ui{Outline} panel lists every heading in the open file and jumps to it on
+click. It reads \verb|\part| through \verb|\subparagraph|, understands starred
+forms like \verb|\section*|, and ignores anything commented out --- so a
+heading you have temporarily disabled with a \texttt{\%} does not clutter it.
+
+For longer jumps, the command palette (\kbd{Cmd+Shift+P}) exposes go-to-line,
+find, find-and-replace, comment toggling, line duplication and movement, and
+the editor zoom controls, and the full shortcut list --- search it for
+\emph{keyboard shortcuts}. \kbd{Cmd+K} is not the way in: that key opens the
+inline assistant, Section~\ref{sec:inline}.
+
+\subsection{Reading errors}
+
+When a run fails, the \ui{Issues} panel lists what went wrong: errors first,
+then warnings, then overfull and underfull boxes. Each row gives the message,
+the offending source line where the log provides it, and the file and line
+number.
+
+Click a row and the editor opens that file and puts your cursor on that line.
+
+The distinction is worth respecting. An \emph{error} stopped the compiler and
+must be fixed. A \emph{warning} --- an undefined reference, a missing citation
+--- produced a PDF anyway, but usually one with \texttt{??} in it. A
+\emph{badbox} is purely typographic: a line \LaTeX{} could not break neatly.
+Badboxes are not clickable, because there is generally nothing at that line to
+fix; they are a signal to reword a sentence or let it go.
+
+Remember Section~\ref{sec:passes}: a fresh project reports undefined references
+on its first run and resolves them on the second. Do not go hunting for a bug
+that a second press of \ui{Typeset} will fix.
