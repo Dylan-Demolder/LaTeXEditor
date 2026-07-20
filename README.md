@@ -19,6 +19,11 @@ from. Press **⌘Z** and it never happened.
 
 That is the whole idea. Everything below follows from it.
 
+![The editor, with the guide open and typeset beside it](docs/screenshots/01-editor-preview.jpg)
+
+*Source on the left, typeset PDF on the right, issues underneath. The document
+shown is the built-in reference guide — itself a LaTeXEditor project.*
+
 ---
 
 ## Highlights
@@ -38,6 +43,8 @@ Type an instruction, or click a preset. Then:
 | `⌘↵` | Accept, writing back into the captured range |
 | `Esc` | Discard, or stop a run in flight |
 
+![Cmd+K open on a paragraph, showing a proposed diff](docs/screenshots/02-inline-cmdk.jpg)
+
 Refinements re-run against the **original** text, not the previous answer. Ask
 for "shorter" three times and you get three attempts at the same task, not a
 paragraph whittled away to nothing.
@@ -48,10 +55,10 @@ A line diff shows a one-word fix as a whole line deleted and a whole line added,
 and leaves you to spot the difference. So where a line was reworded rather than
 replaced, only the changed words are tinted:
 
-```
-- are all coloured differently, [\verb|\begin|/\verb|\end|] blocks fold, and
-+ are all coloured differently, [code] blocks fold, and
-```
+![A word-level diff, with only the changed phrase tinted](docs/screenshots/03-word-diff.jpg)
+
+Everything unchanged is dimmed. Your eye goes straight to the edit instead of
+re-reading the sentence to find it.
 
 Pairing happens only where it helps. Lines that share no wording, or whose
 changes are scattered across many runs, stay as plain line pairs — a word diff
@@ -71,9 +78,12 @@ loaded. Each skill declares what it needs and the editor attaches it:
 - **Your compile errors**, straight from the last build. *Fix Compilation
   Errors* reads them itself.
 
-The panel states what it is about to send — *selection (4 lines)* or *whole file
-(312 lines)*, plus *Also sends: 1 error, preamble* — so the cost is never
-hidden.
+![The AI panel fixing a compile error, stating it also sends 3 errors and the preamble](docs/screenshots/06-fix-errors.jpg)
+
+The panel states what it is about to send — *selection (1 line)* or *whole file
+(299 lines)*, plus *Also sends: 3 errors, preamble* — so the cost is never
+hidden. Those three errors came straight from the failed run; nobody pasted a
+log.
 
 ### Fast enough to use mid-sentence
 
@@ -96,6 +106,12 @@ are on by default, and both are yours to change.
 `\documentclass` — rather than compiling whichever file happens to be open,
 writes to `build/`, and parses the log into errors, warnings and badboxes.
 Click an issue and the editor opens that file on that line.
+
+![A failed build, with three cascading errors in the Issues panel](docs/screenshots/04-errors.jpg)
+
+*One bad command throws LaTeX off and everything after it complains. Fix the
+first error and the rest usually vanish — the tutorial walks you through exactly
+this.*
 
 Compiler discovery deliberately does not trust `PATH`. A macOS app launched from
 the Dock inherits roughly `/usr/bin:/bin:/usr/sbin:/sbin`, so a TeX install that
@@ -123,6 +139,8 @@ spreadsheet rows — it escapes the `%` signs that would otherwise comment out
 half your table), **Tighten**, and **Consistency Check** for terminology and
 tense that drift across a long document.
 
+![The AI skills panel listing all fifteen skills](docs/screenshots/05-skills-panel.jpg)
+
 Skills are typed by what they produce, so the UI matches: rewrites are diffed
 and applied, generated blocks insert at the cursor, and explanations are
 copy-only — no misleading Apply button on an explanation.
@@ -141,6 +159,55 @@ claude mcp add --transport http latex http://127.0.0.1:9876/mcp
 It is localhost-only and unauthenticated, and `write_file` overwrites without
 asking. Commit before letting an agent loose, and the review is a `git diff`
 rather than an act of faith.
+
+---
+
+## What people use it for
+
+### Writing a report against a deadline
+
+You have notes, a spreadsheet of numbers, and four hours. Paste the bullets into
+**Notes → Prose** and get paragraphs that say only what your notes said — where
+a note is too vague to write from, it leaves a `% TODO:` rather than inventing a
+finding. Paste the spreadsheet rows into **Paste Data → Table** and get a
+`booktabs` table with the percent signs escaped. Write the **Executive Summary**
+last, from the finished document, because that is when you actually know the
+conclusion. Run **Tighten** on the section that ran half a page over.
+
+### Cleaning up a draft you already wrote
+
+⌘K, *make this clearer*, read the diff, accept or move on. On prose you have
+already revised twice, expect it to propose preferences and expect to decline
+most of them — that is what running a copy-editor over clean copy looks like.
+The word-level diff is what makes declining cheap: you can see in a glance that
+a change is a serial comma rather than a fixed error.
+
+### Getting unstuck on a LaTeX error
+
+Press Typeset, get "Undefined control sequence", click the row, land on the
+line. Select it, run **Fix Compilation Errors**. The error is already attached —
+you are never asked to find it in a 400-line log. This is the case where the
+editor knowing your project pays for itself immediately.
+
+### A thesis or a long, multi-file document
+
+`\input` across chapter files, a `.bib` the AI reads for real citation keys, and
+an Outline panel that jumps between headings. Commit as you go from the Git
+panel. Compiler discovery means it typesets on a machine where a GUI app would
+otherwise claim you have no TeX installed.
+
+### Working with a coding agent
+
+Point Claude Code or any MCP client at `127.0.0.1:9876` and it can read and
+write the project you have open — for restructuring across files, renaming a
+label everywhere, or splitting a chapter. The skills panel is for one passage
+and one diff you approve; an agent is for many files and several steps. Commit
+first, and the review is a `git diff`.
+
+### Drafting something you would rather not send anywhere
+
+Point it at **Ollama** and no text leaves the machine. Every feature above works
+the same way; the only difference is which endpoint the request goes to.
 
 ---
 
@@ -210,6 +277,8 @@ Six sections behind a left nav, and every control is wired to something real:
 - **Help** — open or restart the tutorial, open the guide.
 - **About** — version, compilers found, the MCP server's real bind result,
   settings path, installed skills.
+
+![The Settings panel, Editor section](docs/screenshots/07-settings.jpg)
 
 Every setting carries a default, and there is a test asserting that a settings
 file written by an older build still loads. Losing someone's API keys because a
