@@ -1,0 +1,298 @@
+% ══ LaTeXEditor — HANDS-ON TUTORIAL ══════════════
+%
+%   Everything is in this one file. The instructions
+%   are LaTeX comments — the lines starting with % —
+%   so they are visible here in the editor and
+%   invisible in the PDF on your right.
+%
+%   Work top to bottom. Nine steps, about fifteen
+%   minutes. By the end you will have finished a real
+%   one-page report and used every part of the editor
+%   worth knowing.
+%
+%   Nothing here can break anything. Cmd+Z undoes any
+%   change, including anything the AI writes.
+%
+%
+% ── STEP 1 ─ Typeset it, before reading further ───
+%
+%   Press Cmd+Enter.
+%
+%   Then press it a SECOND time. The editor runs one
+%   compiler pass per press, and cross-references need
+%   the .aux file written by the first run. After the
+%   first press the Issues panel says "Label(s) may
+%   have changed" — that is expected, and the second
+%   press clears it.
+%
+%   You should now see this document in the preview
+%   pane. That is the whole loop: edit, Cmd+Enter,
+%   look right.
+%
+% ──────────────────────────────────────────────────
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+
+% ── STEP 2 ─ Make it yours ────────────────────────
+%
+%   Replace "Your Name" below with your actual name,
+%   press Cmd+Enter, and watch the title block change
+%   in the preview.
+%
+%   That is all editing is here. Autosave writes the
+%   file a second after you stop typing, so there is
+%   no save step to remember — though Cmd+S works if
+%   you want it.
+%
+% ──────────────────────────────────────────────────
+
+\title{Q3 Regional Performance}
+\author{Your Name}
+\date{October 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Summary}
+\label{sec:summary}
+
+% ── STEP 3 ─ Your first Cmd+K ─────────────────────
+%
+%   The paragraph below is badly written on purpose.
+%
+%   Put your cursor anywhere inside it — you do NOT
+%   need to select anything — and press Cmd+K.
+%
+%   A bar opens underneath, and the text it is about
+%   to change is tinted behind it. With nothing
+%   selected it takes the whole paragraph you are
+%   standing in.
+%
+%   Type:  make this clearer and less repetitive
+%
+%   Press Enter. Watch it stream, then read the diff:
+%   removed lines in red, added in green, and where a
+%   line was reworded rather than replaced, only the
+%   WORDS that changed are tinted.
+%
+%   Press Cmd+Enter to accept.
+%
+%   Now press Cmd+Z. The edit is undone like any
+%   other typing, and Cmd+Shift+Z puts it back.
+%   Nothing the AI does is irreversible — which is
+%   the point.
+%
+% ──────────────────────────────────────────────────
+
+It is the case that the third quarter was a quarter in
+which the business performed in a way that was better
+than the way it performed in the second quarter, with
+revenue that was up and also costs that were down, and
+generally speaking the overall picture is a picture
+that is positive.
+
+% ── STEP 4 ─ Refining, instead of settling ────────
+%
+%   Cmd+K into the paragraph you just fixed and type:
+%
+%       rewrite this for a board audience
+%
+%   When the answer comes back, do NOT accept it.
+%   Instead type:
+%
+%       shorter
+%
+%   and press Enter. That is the refine loop.
+%
+%   Two things worth knowing:
+%
+%   - Enter refines, Cmd+Enter accepts, Esc discards.
+%     There is a close button on the bar too, if you
+%     would rather click.
+%
+%   - A refinement re-runs against the ORIGINAL
+%     paragraph, not against the previous answer. Ask
+%     for "shorter" three times and you get three
+%     attempts at the same task, not a paragraph
+%     whittled away to nothing.
+%
+%   Accept whichever version you like best, or press
+%   Esc to keep the one you already had.
+%
+% ──────────────────────────────────────────────────
+
+\section{Regional Results}
+\label{sec:regions}
+
+% ── STEP 5 ─ Pasted data into a table ─────────────
+%
+%   Below is raw CSV, exactly as it arrives from a
+%   spreadsheet. Select these four data lines — not
+%   this comment — and copy them:
+%
+%       Region,Q2 Revenue,Q3 Revenue,Change
+%       EMEA,1.24,1.81,+46%
+%       APAC,0.92,1.13,+23%
+%       Americas,2.10,2.04,-3%
+%
+%   Open the AI panel in the sidebar, choose
+%   "Paste Data -> Table", paste into the box, Run.
+%
+%   Put your cursor on the blank line below this
+%   comment, press "Insert at cursor", then Cmd+Enter.
+%
+%   Two things it had to get right. It escaped the %
+%   signs as \% — a bare % would have commented out
+%   the rest of the row. And it used booktabs rules
+%   because this preamble loads booktabs; the skill is
+%   given your preamble, so it can only use packages
+%   you actually have.
+%
+% ──────────────────────────────────────────────────
+
+
+
+% ── STEP 6 ─ Notes into prose ─────────────────────
+%
+%   Real reports start as bullets. Copy these four:
+%
+%       - EMEA growth from two enterprise renewals,
+%         not new logos
+%       - APAC steady, no surprises
+%       - Americas down slightly, one large churn in
+%         August
+%       - watch: Americas pipeline thin for Q4
+%
+%   AI panel -> "Notes -> Prose" -> paste -> Run ->
+%   Insert at cursor, on the blank line below.
+%
+%   Read what comes back carefully. The skill is told
+%   to add no facts that were not in your notes, and
+%   to leave a "% TODO:" comment where a note is too
+%   vague to write from. A TODO is the skill telling
+%   you it would otherwise have had to invent
+%   something.
+%
+% ──────────────────────────────────────────────────
+
+
+
+\section{Outlook}
+\label{sec:outlook}
+
+The Q4 forecast assumes the Americas pipeline recovers
+to its Q2 level.
+
+% ── STEP 7 ─ Breaking it, and fixing it ───────────
+%
+%   Time to see what happens when things go wrong.
+%
+%   Find the \inclduegraphics line a few lines below
+%   and delete the % from the start of it, so it
+%   becomes real LaTeX. Then press Cmd+Enter.
+%
+%   The build fails. The Issues panel fills up:
+%   "Undefined control sequence" first, then a couple
+%   of follow-on errors caused by it. That cascade is
+%   normal — one bad command throws LaTeX off and
+%   everything after it complains. Fix the FIRST error
+%   and the rest usually vanish.
+%
+%   Click that first row: the editor jumps to the
+%   offending line.
+%
+%   Now fix it without reading the log yourself:
+%
+%     1. Select the broken line.
+%     2. AI panel -> "Fix Compilation Errors" -> Run.
+%
+%   You are never asked to paste the error. The panel
+%   says "Also sends: N errors, preamble" because it
+%   took them straight from the run you just did.
+%   Apply, then Cmd+Enter.
+%
+%   (Prefer not to break it? Leave the line commented
+%   and read on. But breaking things is the fastest
+%   way to learn to trust a tool.)
+%
+% \inclduegraphics[width=0.8\textwidth]{chart.pdf}
+%
+% ──────────────────────────────────────────────────
+
+% ── STEP 8 ─ Tighten, a preset worth knowing ──────
+%
+%   Select the whole Outlook section — the heading
+%   line down to the end of its paragraph — and press
+%   Cmd+K.
+%
+%   This time do not type anything. Click the
+%   "Tighten" preset.
+%
+%   Tighten cuts roughly a third of the words while
+%   keeping every claim, figure and citation. Reach
+%   for it when a section runs half a page over.
+%
+%   The other two presets on that bar are "Proofread
+%   Section" and "Fix Compilation Errors" — the three
+%   you want most often. Everything else lives in the
+%   AI panel.
+%
+% ──────────────────────────────────────────────────
+
+% ── STEP 9 ─ The summary, written last ────────────
+%
+%   Summaries are written last and read first, so
+%   this is the right moment.
+%
+%   Click somewhere in the document but select
+%   NOTHING. Open the AI panel and choose
+%   "Executive Summary", then Run.
+%
+%   With nothing selected the whole file is sent,
+%   which is right here — a summary of one paragraph
+%   would be useless. The panel tells you which it is
+%   doing: it will say "whole file", not "selection".
+%
+%   Insert the result under the Summary heading near
+%   the top, then press Cmd+Enter one last time.
+%
+% ──────────────────────────────────────────────────
+%
+%   Done. You have used:
+%
+%     Cmd+Enter      typeset, and the two-pass rule
+%     Cmd+K          inline editing, refining,
+%                    accepting, undoing
+%     Issues panel   finding an error, jumping to it
+%     AI panel       four skills, with your project's
+%                    context attached automatically
+%     Cmd+Z          undoing anything the AI wrote
+%
+%   Worth trying next, in your own time:
+%
+%   - The Outline panel jumps between sections in a
+%     long file.
+%   - The preview zooms with Cmd +/- while the pointer
+%     is over it, or pinch on a trackpad. "Fit width"
+%     re-fits when you drag the splitter.
+%   - The Components panel inserts filled-in blocks —
+%     booktabs tables, figures, theorems — when you
+%     want a correct starting point for something
+%     fiddly.
+%   - The full reference is the LaTeXEditor Guide, in
+%     the folder beside this one. It explains
+%     everything this tutorial only showed you.
+%
+% ──────────────────────────────────────────────────
+
+\end{document}

@@ -40,9 +40,18 @@ has assert-based checks that run under plain `node` and `cargo test`.
 `demo-project/` holds sample documents — including `broken.tex`, which fails to
 compile on purpose so you can exercise the error panel.
 
-**`demo-project/le-guide/` is the user guide, written as a LaTeXEditor
-project.** Open that folder, press Typeset twice, and you have both the
-documentation and a realistic multi-file project to try the editor on — it uses
+**`demo-project/tutorial/` is a hands-on tutorial and what first launch opens.**
+One file, nine steps, about fifteen minutes: you finish a real one-page report
+and use ⌘K, the refine loop, three AI skills, and the error panel on the way.
+The instructions are `%` comments sitting directly above the work, so they're
+visible while you edit and invisible in the PDF — which also means you never
+have to switch files to read the next step. Step 7 has you uncomment a planted
+typo, watch the build fail, and fix it with the AI without reading the log.
+
+**`demo-project/le-guide/` is the reference guide, written as a LaTeXEditor
+project.** The tutorial teaches by doing; this explains. Open that folder, press
+Typeset twice, and you have both the documentation and a realistic multi-file
+project to try the editor on — it uses
 `\input` across six section files, a `.bib` the AI reads for citation keys, a
 TikZ diagram, `booktabs` tables and code listings. Start there.
 

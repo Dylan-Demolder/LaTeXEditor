@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { cancelAi } from "../../hooks/useTauriCommands";
 import { runSkill, missingKeyReason, type RunEnvironment } from "../../lib/ai-runner";
@@ -24,8 +24,10 @@ const QUICK_SKILL_IDS = ["proofread-section", "tighten-to-length", "fix-errors"]
 
 export interface InlineTarget {
   selection: EditorSelection;
-  /** Pixels from the top of the editor container to just below the selection. */
-  top: number;
+  /** Pixels from the container top to just below the selection's last line. */
+  below: number;
+  /** Pixels from the container top to the selection's first line. */
+  above: number;
 }
 
 interface Props {
@@ -65,6 +67,15 @@ export default function InlineAssist({ target, onClose }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const startedAt = useRef(0);
+  const cardRef = useRef<HTMLDivElement>(null);
+  /**
+   * Flip above the target when the card would otherwise run off the bottom.
+   *
+   * Anchoring below the selection is right most of the time, but a paragraph
+   * near the foot of the viewport pushed the whole diff — and the Accept
+   * button — past the bottom edge, where it could not be read or reached.
+   */
+  const [flipped, setFlipped] = useState(false);
 
   // The range is captured once, when the card opens. Everything below writes to
   // this snapshot — never to wherever the cursor has since wandered.
@@ -110,6 +121,18 @@ export default function InlineAssist({ target, onClose }: Props) {
     );
     return () => clearInterval(id);
   }, [isRunning]);
+
+  // Re-measured whenever the card grows — a diff arriving can turn a card that
+  // fitted below into one that does not.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    const container = card?.offsetParent as HTMLElement | null;
+    if (!card || !container) return;
+    const height = card.offsetHeight;
+    const fitsBelow = target.below + height <= container.clientHeight;
+    const fitsAbove = target.above - height >= 0;
+    setFlipped(!fitsBelow && fitsAbove);
+  }, [target.below, target.above, result, error, isRunning]);
 
   const cleanResult = useMemo(() => (result ? stripCodeFence(result) : null), [result]);
 
@@ -196,10 +219,17 @@ export default function InlineAssist({ target, onClose }: Props) {
   return (
     <div
       className="absolute left-12 right-6 z-20"
-      style={{ top: target.top }}
+      style={
+        flipped
+          ? { top: target.above, transform: "translateY(-100%)" }
+          : { top: target.below }
+      }
       onKeyDown={handleKeyDown}
     >
-      <div className="rounded-lg border border-edge-strong bg-raised shadow-xl overflow-hidden">
+      <div
+        ref={cardRef}
+        className="rounded-lg border border-edge-strong bg-raised shadow-xl overflow-hidden"
+      >
         <div className="flex items-center gap-2 px-2.5 py-2">
           <Icon name="sparkle" size={14} className="text-accent shrink-0" />
           <input

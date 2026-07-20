@@ -201,7 +201,7 @@ export const aiSkills: AISkill[] = [
     output: "insert",
     context: ["preamble"],
     systemPrompt:
-      "You convert tabular data into LaTeX tables. The input is pasted directly from a spreadsheet or CSV file: comma-, tab- or whitespace-separated rows, with the first row usually a header. Infer the column count and alignment — numeric columns right-aligned, text left-aligned — and use the first row as the header. Reproduce every value exactly as given: do not round, reorder, recompute or omit rows. Use booktabs rules only if the preamble loads booktabs; otherwise use \\hline. Include a caption and label. Return only the table environment.",
+      "You convert tabular data into LaTeX tables. The input is pasted directly from a spreadsheet or CSV file: comma-, tab- or whitespace-separated rows, with the first row usually a header. Infer the column count and alignment — numeric columns right-aligned, text left-aligned — and use the first row as the header. Reproduce every value exactly as given: do not round, reorder, recompute or omit rows. Escape LaTeX special characters in the data — % & _ # $ become \\% \\& \\_ \\# \\$ — since spreadsheet data routinely contains percentages and ampersands, and an unescaped % silently comments out the rest of the row while a bare & breaks the column count. Use booktabs rules only if the preamble loads booktabs; otherwise use \\hline. Include a caption and label. Return only the table environment.",
     userPromptTemplate: "Convert this data into a LaTeX table:\n\n$$content$$",
     args: [
       {

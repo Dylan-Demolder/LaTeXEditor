@@ -4,7 +4,12 @@ import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import { useCallback, useRef, useEffect, useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { writeFile } from "../../hooks/useTauriCommands";
-import { monaco, getSelection, getSelectionOrParagraph } from "./editor-bridge";
+import {
+  monaco,
+  getSelection,
+  getSelectionOrParagraph,
+  type EditorSelection,
+} from "./editor-bridge";
 import InlineAssist, { type InlineTarget } from "./InlineAssist";
 import { MONACO_THEME_NAME } from "../../lib/theme";
 import { registerLatexLanguage, LATEX_LANGUAGE_ID } from "./latex-language";
@@ -58,19 +63,50 @@ export default function LaTeXEditor({ onCompile, saveRef }: Props) {
     closeAssistRef.current = closeAssist;
   }, [closeAssist]);
 
-  const openAssist = useCallback(() => {
+  /**
+   * Where the card should sit, in pixels from the top of the editor container.
+   *
+   * Both edges are reported: `below` is the usual anchor, and `above` lets the
+   * card flip up when it would otherwise overflow the bottom of the pane.
+   */
+  const anchorFor = useCallback((selection: EditorSelection) => {
     const editor = editorRef.current;
-    const selection = getSelectionOrParagraph();
-    if (!editor || !selection) return;
-
-    // Anchor below the last line of the target so the card never covers the
-    // text it is about to change.
-    const visible = editor.getScrolledVisiblePosition({
+    if (!editor) return null;
+    const end = editor.getScrolledVisiblePosition({
       lineNumber: selection.range.endLineNumber,
       column: 1,
     });
-    setAssist({ selection, top: (visible?.top ?? 0) + (visible?.height ?? 22) + 4 });
+    const start = editor.getScrolledVisiblePosition({
+      lineNumber: selection.range.startLineNumber,
+      column: 1,
+    });
+    if (!end || !start) return null;
+    return { below: end.top + end.height + 4, above: start.top - 4 };
   }, []);
+
+  const openAssist = useCallback(() => {
+    const selection = getSelectionOrParagraph();
+    if (!selection) return;
+    const anchor = anchorFor(selection);
+    if (!anchor) return;
+    setAssist({ selection, ...anchor });
+  }, [anchorFor]);
+
+  /**
+   * Keep the card attached to its text while the document scrolls. Positioned
+   * once at open, it stayed put while the paragraph slid away underneath —
+   * pointing at whatever line happened to scroll into its place.
+   */
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!assist || !editor) return;
+    const sub = editor.onDidScrollChange(() => {
+      const anchor = anchorFor(assist.selection);
+      if (!anchor) return;
+      setAssist((prev) => (prev ? { ...prev, ...anchor } : prev));
+    });
+    return () => sub.dispose();
+  }, [assist, anchorFor]);
 
   useEffect(() => {
     openAssistRef.current = openAssist;
@@ -191,7 +227,7 @@ export default function LaTeXEditor({ onCompile, saveRef }: Props) {
       <div className="flex-1 relative">
         {assist && (
           <InlineAssist
-            key={`${assist.selection.range.startLineNumber}-${assist.top}`}
+            key={assist.selection.range.startLineNumber}
             target={assist}
             onClose={closeAssist}
           />
