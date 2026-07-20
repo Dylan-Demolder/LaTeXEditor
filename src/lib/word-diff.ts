@@ -162,30 +162,35 @@ export function annotate(
     }
 
     if (removed.length > 0 && removed.length === added.length) {
-      let paired = true;
-      const pairs: ChangedPair[] = [];
+      // Decide line by line, not for the whole run at once. Judging the group
+      // as a unit meant one unreadable line dragged its neighbours down with
+      // it: a two-line edit where the first was heavily reworked and the
+      // second lost a single clause rendered *both* as plain lines, throwing
+      // away the pairing on the one that would have read perfectly well.
+      const pairs: AnnotatedLine[] = [];
 
       for (let k = 0; k < removed.length; k++) {
         const parts = wordDiff(removed[k], added[k]);
-        if (!parts || !isReadablePair(parts)) {
-          paired = false;
-          break;
+        if (parts && isReadablePair(parts)) {
+          pairs.push({
+            kind: "pair",
+            before: parts.filter((p) => p.op !== "+"),
+            after: parts.filter((p) => p.op !== "-"),
+          });
+        } else {
+          // Keep this line's before and after adjacent, so it still reads as
+          // one change rather than drifting apart from its counterpart.
+          pairs.push({ op: "-", text: removed[k] });
+          pairs.push({ op: "+", text: added[k] });
         }
-        pairs.push({
-          kind: "pair",
-          before: parts.filter((p) => p.op !== "+"),
-          after: parts.filter((p) => p.op !== "-"),
-        });
       }
-
-      if (paired) {
-        out.push(...pairs);
-        idx = scan;
-        continue;
-      }
+      out.push(...pairs);
+      idx = scan;
+      continue;
     }
 
-    // No usable pairing — emit the runs unchanged.
+    // Unequal run lengths: there is no honest line-to-line correspondence to
+    // draw, so emit the removed run as-is and let the added run follow.
     removed.forEach((text) => out.push({ op: "-", text }));
   }
 

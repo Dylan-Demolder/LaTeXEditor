@@ -115,6 +115,22 @@ assert.ok(
   `unrelated lines must not be paired: ${JSON.stringify(confetti)}`
 );
 
+// A mixed run: one line too rewritten to pair, one a clean one-word fix.
+// Each is judged on its own. Judging the run as a unit meant a single
+// unreadable line dragged its neighbours down with it, throwing away the
+// pairing on lines that would have read perfectly well.
+const mixed = annotate(
+  lineDiff("alpha beta gamma\nthe cat sat on the mat", "zulu yankee xray\nthe dog sat on the mat")!
+);
+assert.equal(mixed.length, 3, `expected two plain lines and one pair: ${JSON.stringify(mixed)}`);
+assert.equal((mixed[0] as { op: string }).op, "-");
+assert.equal((mixed[1] as { op: string }).op, "+");
+assert.equal((mixed[2] as ChangedPair).kind, "pair");
+// The unpaired line keeps its before and after adjacent, so it still reads as
+// one change rather than drifting apart from its counterpart.
+assert.equal((mixed[0] as { text: string }).text, "alpha beta gamma");
+assert.equal((mixed[1] as { text: string }).text, "zulu yankee xray");
+
 // ...but a one-word fix inside an otherwise intact line always pairs. This is
 // the everyday case: the whole feature exists for it.
 const everyday = annotate(

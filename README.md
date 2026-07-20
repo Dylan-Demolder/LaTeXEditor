@@ -43,7 +43,7 @@ Type an instruction, or click a preset. Then:
 | `⌘↵` | Accept, writing back into the captured range |
 | `Esc` | Discard, or stop a run in flight |
 
-![Cmd+K open on a paragraph, showing a proposed diff](docs/screenshots/02-inline-cmdk.jpg)
+![Cmd+K open on a draft paragraph, proposing seven corrections](docs/screenshots/02-inline-cmdk.jpg)
 
 Refinements re-run against the **original** text, not the previous answer. Ask
 for "shorter" three times and you get three attempts at the same task, not a
@@ -51,16 +51,19 @@ paragraph whittled away to nothing.
 
 ### Diffs you can actually read
 
-A line diff shows a one-word fix as a whole line deleted and a whole line added,
-and leaves you to spot the difference. So where a line was reworded rather than
-replaced, only the changed words are tinted:
+A line diff shows a fix as a whole line deleted and a whole line added, and
+leaves you to find the difference. Proofreading a rough draft, that means four
+red lines and four green ones to compare by eye. Here is the same edit with the
+changed words tinted and everything else dimmed:
 
-![A word-level diff, with only the changed phrase tinted](docs/screenshots/03-word-diff.jpg)
+![A word-level diff: seven corrections tinted across four lines, the rest dimmed](docs/screenshots/03-word-diff.jpg)
 
-Everything unchanged is dimmed. Your eye goes straight to the edit instead of
-re-reading the sentence to find it.
+Seven independent corrections — `shows`/`show`, `have`/`has`, `are`/`is`,
+`continues`/`continue`, `was`/`were`, `remain`/`remains`, `seen`/`saw` — and you
+can see every one of them without reading a word of the unchanged text.
 
-Pairing happens only where it helps. Lines that share no wording, or whose
+Each line is judged on its own, so one heavily-rewritten line does not stop its
+neighbours from pairing. Pairing happens only where it helps. Lines that share no wording, or whose
 changes are scattered across many runs, stay as plain line pairs — a word diff
 there is confetti. That judgement is measured, not guessed: the heuristic counts
 *change runs and surviving anchor words*, because the obvious metric
