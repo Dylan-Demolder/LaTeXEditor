@@ -1,0 +1,608 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\title{Neural Program Synthesis:\\
+       Specification, Verification, and the Benchmark Problem}
+\author{Prepared with LaTeXEditor}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Program synthesis has moved in a decade from constraint solving over small
+formal specifications to language models generating whole functions from
+comments. The change is not merely one of scale: it alters what a
+specification is, what correctness means, and how a candidate program is
+verified. This paper traces that shift and examines its consequences. We argue
+that the field's dominant benchmarks measure a narrow and increasingly
+unrepresentative slice of the problem --- self-contained functions with
+complete test suites and unambiguous specifications --- and that the
+properties which determine usefulness in practice, namely specification
+ambiguity, integration with existing code, and security of the generated
+output, are the properties least well captured. We survey what is known about
+each, and note that contamination has made the headline benchmark numbers
+progressively harder to interpret.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+The aspiration to have machines write programs is as old as the discipline.
+Early work framed it deductively \cite{manna1971}: given a formal
+specification, derive a program together with a proof that it satisfies the
+specification. The approach is sound and scales poorly, since writing the
+formal specification is frequently harder than writing the program.
+
+The intermediate era relaxed the specification. Programming by example infers
+a program from input--output pairs, and the best-known deployment ---
+spreadsheet string transformation \cite{gulwani2011} --- succeeds by
+restricting the language so severely that a small number of examples
+determines the program almost uniquely. Sketching \cite{solar2008} takes a
+partial program with holes and searches for completions satisfying assertions.
+Both trade expressiveness for tractability.
+
+Language models trained on code \cite{chen2021}, and the open families that
+followed \cite{nijkamp2023, roziere2023}, changed the terms. The
+specification is now a natural-language comment, or a function signature, or
+the surrounding file. There is no formal object to satisfy, no search over a
+constrained space, and no proof. What there is instead is a very strong prior
+over what programs look like, learned from a large corpus, and a decoding
+procedure that samples from it.
+
+This paper concerns what that substitution costs. Section~\ref{sec:spec}
+examines specification, Section~\ref{sec:verification} verification,
+Section~\ref{sec:benchmarks} the measurement problem, and
+Section~\ref{sec:security} the security properties of generated code.
+
+\section{What counts as a specification}
+\label{sec:spec}
+
+\subsection{The ambiguity that formal methods removed}
+
+A formal specification is unambiguous by construction. A natural-language one
+is not, and the ambiguity is not incidental --- it is the reason natural
+language is a usable interface.
+
+Consider the instruction ``return the median of a list''. Unspecified: the
+behaviour on an empty list, on an even-length list (lower, upper, or mean of
+the two middle elements), on a list containing incomparable elements, and
+whether the input may be mutated by sorting in place. A human implementer
+resolves these by convention, by asking, or by looking at how the function is
+used. A model resolves them by sampling from a distribution over what such
+functions usually do.
+
+This is frequently adequate and occasionally wrong in ways that are hard to
+detect, because the generated code is fluent and plausible for every one of
+those choices. The failure is not a syntax error or an obvious bug; it is a
+defensible decision that differs from the one intended.
+
+\subsection{Consequences for evaluation}
+
+Benchmarks handle this by making specifications unambiguous. HumanEval
+\cite{chen2021} problems carry a docstring plus example calls that pin down
+the edge cases; MBPP \cite{austin2021} similarly. This is necessary for
+automatic scoring and it removes the characteristic difficulty of the real
+task.
+
+The practical implication is that measured performance on such benchmarks
+overstates performance on underspecified requests, and the gap is not a
+constant --- it grows with the ambiguity of the domain. A model scoring highly
+on well-specified algorithmic problems may be considerably less reliable on
+business logic, where the specification is a sentence and the correct
+behaviour is a matter of local convention.
+
+\section{Verification}
+\label{sec:verification}
+
+Having generated a candidate, how is it known to be correct?
+
+\subsection{Tests as the operative standard}
+
+The field settled on execution against tests, formalised as pass@$k$
+\cite{chen2021}: the probability that at least one of $k$ samples passes. The
+unbiased estimator, given $n$ samples of which $c$ pass, is
+\begin{equation}
+  \mathrm{pass}@k = \mathbb{E}\left[
+    1 - \frac{\binom{n - c}{k}}{\binom{n}{k}} \right].
+  \label{eq:passk}
+\end{equation}
+
+This is a considerable retreat from the deductive programme. Passing a test
+suite is not correctness; it is correctness on the tested inputs. The gap is
+measurable: EvalPlus \cite{liu2023} augmented HumanEval's tests substantially
+and found reported pass rates fell by double-digit percentages, meaning a
+sizeable fraction of ``correct'' solutions had been passing thin test suites
+while failing on edge cases.
+
+\subsection{Sampling and selection}
+
+Equation~\ref{eq:passk} rewards diversity: with $k$ attempts, a model that
+samples varied approaches beats one that samples the same near-deterministic
+answer repeatedly. This is why reported pass@100 far exceeds pass@1, and why
+raising the sampling temperature improves the former while degrading the
+latter.
+
+Exploiting this in practice requires selecting among candidates without access
+to the hidden tests. AlphaCode \cite{li2022} generates on the order of a
+million candidates, filters against the example tests in the problem
+statement, then clusters the survivors by behaviour on generated inputs and
+submits one representative per cluster. The insight is that programs agreeing
+on random inputs are probably the same program, so clustering approximates
+deduplication over semantics rather than syntax.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Verification strategies and what they establish.}
+  \label{tab:verification}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Strategy} & \textbf{Establishes} & \textbf{Misses} \\
+    \midrule
+    Example tests \cite{chen2021}   & behaviour on given inputs & edge cases \\
+    Augmented tests \cite{liu2023}  & behaviour on more inputs  & untested paths \\
+    Clustering \cite{li2022}        & agreement among candidates & shared misconceptions \\
+    Execution feedback \cite{le2022} & runtime failures         & silent wrong answers \\
+    Formal proof \cite{solar2008}   & full specification        & requires a specification \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Feedback loops}
+
+Execution results can be fed back. A model shown the error from a failed run
+and asked to repair frequently succeeds, and reinforcement learning against
+test outcomes \cite{le2022} trains this behaviour directly.
+
+The limitation is the reward signal. Tests are sparse --- pass or fail --- and
+optimising against them admits reward hacking: solutions that special-case the
+visible tests rather than generalising. This is a species of the specification
+problem, arriving through a different door. When the test suite becomes the
+specification, the model optimises the test suite.
+
+\section{The benchmark problem}
+\label{sec:benchmarks}
+
+\subsection{Contamination}
+
+Models are trained on public code, and benchmarks are public code. HumanEval
+was written by hand specifically to avoid this, but its problems and solutions
+have since appeared throughout the internet in tutorials, blog posts and
+repositories, so recent models have almost certainly seen them.
+
+The effect is difficult to quantify and impossible to dismiss. Measures such
+as LiveCodeBench \cite{jain2024}, which collects problems published after a
+model's training cutoff and reports performance by date, consistently show
+lower scores on post-cutoff problems --- direct evidence that some part of the
+pre-cutoff score reflects memorisation. Any benchmark number quoted without a
+contamination analysis should be read with this in mind.
+
+\subsection{Function-level bias}
+
+HumanEval and MBPP problems are self-contained functions of a few lines with
+no dependencies. This is a small and unusual part of programming. Real work
+involves reading existing code, conforming to its conventions, using project
+libraries correctly, and changing several files consistently.
+
+SWE-bench \cite{jimenez2024} was introduced to address exactly this, drawing
+tasks from real GitHub issues and requiring a patch that passes the
+repository's own tests. Performance on it was initially far below performance
+on function-level benchmarks, which is the expected relationship and a useful
+corrective. Its difficulty also comes partly from irreducible ambiguity ---
+some issues are underspecified even for human maintainers --- so a ceiling
+below 100\% is appropriate rather than a failure.
+
+\subsection{Language coverage}
+
+Most benchmarks are Python. Models are markedly better at Python than at
+languages with less public code, and MultiPL-E \cite{cassano2023} quantifies
+the gap by translating benchmarks across languages. Reporting a single number
+from a Python benchmark as a general coding capability overstates it for most
+of the software that exists.
+
+\section{Security}
+\label{sec:security}
+
+Generated code is trained on public code, and public code contains
+vulnerabilities. The model learns the distribution it was shown, including its
+flaws.
+
+The empirical picture is consistent: a substantial fraction of generated code
+in security-sensitive contexts contains recognised weaknesses \cite{pearce2022}
+--- SQL built by string concatenation, missing bounds checks, weak
+cryptographic defaults, unvalidated deserialisation. The rate depends heavily
+on how the prompt frames the task, and the model reproduces insecure idioms
+particularly when the surrounding context already contains them.
+
+Two aspects deserve emphasis. First, the code is usually \emph{functionally
+correct} --- it passes tests --- so test-based verification does not detect the
+problem at all. Correctness and security are orthogonal here, and the field's
+verification apparatus addresses only the former. Second, the failure is
+correlated across generations: the same insecure pattern appears repeatedly
+because it is common in the training data, so sampling more candidates does
+not help.
+
+\paragraph{Dependency risk.}
+A related failure is the confident import of packages that do not exist. Where
+an attacker registers such a name, the hallucinated dependency becomes a
+supply-chain vector. The defence is mechanical --- resolve every import
+against a known-good index before execution --- and it needs to be automatic,
+because the generated code looks entirely ordinary.
+
+\section{Integration with existing code}
+\label{sec:integration}
+
+The function-level framing assumes the program is written from nothing. Most
+programming is editing.
+
+\subsection{Infilling}
+
+Completing at the cursor requires conditioning on text after it as well as
+before, which left-to-right models cannot do. Fill-in-the-middle training
+\cite{fried2023} reorders sequences during pretraining so the model learns to
+generate a middle span given both surrounding regions --- a change in data
+presentation rather than architecture, and the reason modern completion is
+context-aware rather than merely continuing.
+
+\subsection{Repository context}
+
+A model editing a file needs to know what exists elsewhere: the project's
+utilities, its conventions, its type definitions. Supplying this is a
+retrieval problem, and the naive approach of concatenating related files
+exhausts the context window on large projects.
+
+Approaches range from retrieving lexically similar files, to using static
+analysis to find definitions actually referenced, to supplying a compressed
+repository map. Documentation retrieval \cite{zhou2023} addresses a related
+failure, where a model uses an outdated or invented API because its training
+predates the current version.
+
+\subsection{Verification in context}
+
+Repository-level generation makes verification harder in an interesting way. A
+function-level candidate can be executed in isolation. A patch to a large
+repository requires building the project and running its suite, which is
+expensive, environment-dependent, and frequently the slowest part of an agentic
+loop. Much of the engineering in current coding agents concerns making this
+loop fast enough to iterate.
+
+\section{What the models appear to have learned}
+\label{sec:learned}
+
+It is worth asking what capability underlies the results, since the answer
+bears on where it will generalise.
+
+The evidence suggests something closer to strong pattern completion over
+program structure than to reasoning about program semantics. Models produce
+correct implementations of well-known algorithms readily, and are more likely
+to err on problems requiring an unusual combination of familiar pieces than on
+problems requiring a familiar but complicated piece. Performance degrades
+sharply when a problem is superficially similar to a common one but differs in
+a detail --- the model completes the pattern it recognises rather than the
+specification it was given.
+
+This also explains the security findings: reproducing common idioms is exactly
+what pattern completion does, and common idioms include insecure ones. And it
+explains the contamination sensitivity, since memorised solutions are the
+limiting case of pattern completion.
+
+None of this diminishes the practical value. A great deal of programming is
+the assembly of familiar pieces, and a system that does that reliably is
+useful. It does suggest caution about extrapolating from benchmark scores to
+tasks requiring genuine novelty.
+
+\section{Practical use}
+\label{sec:practice}
+
+Several conclusions follow for those deploying these systems.
+
+\paragraph{Specify edge cases explicitly.}
+Ambiguity is resolved by the model's prior, which may not match local
+convention. Stating the empty-input behaviour costs a sentence and removes the
+most common class of silent mismatch.
+
+\paragraph{Do not rely on tests alone.}
+Test passage establishes behaviour on tested inputs and nothing about
+security, performance, or untested paths. Static analysis and dependency
+checking should run on generated code as a matter of course, and the fact that
+it passed is not a substitute.
+
+\paragraph{Review generated code as unfamiliar code.}
+The fluency of the output invites lighter review than equivalent human code
+would receive, and the failure modes --- plausible but wrong edge-case
+handling, insecure idioms, invented APIs --- are ones that skimming does not
+catch.
+
+\paragraph{Prefer small, verifiable units.}
+The systems are most reliable where the task is well specified and the result
+checkable. Decomposing a large change into steps with clear acceptance
+criteria plays to that strength; asking for a large change in one step does
+not.
+
+\section{Agentic loops}
+\label{sec:agentic}
+
+The most consequential recent shift is architectural rather than
+model-level: rather than generating a program in one pass, systems now iterate
+--- read files, propose an edit, run the tests, read the failure, revise.
+
+This changes the error profile substantially. Single-pass generation must be
+right immediately; an iterative system need only be right eventually, and can
+recover from mistakes that would otherwise be fatal. Empirically the
+difference is large, and it accounts for much of the progress on
+repository-level benchmarks \cite{jimenez2024} that model improvements alone
+do not explain.
+
+\subsection{What makes the loop work}
+
+Three properties determine whether iteration converges.
+
+\paragraph{Feedback quality.}
+A compiler error naming a file and line is a strong signal; a test failure
+reporting only ``assertion failed'' is weak; a silent wrong answer is none at
+all. Systems perform best in languages and projects with fast, informative
+diagnostics, which is a property of the codebase rather than the model. Adding
+type annotations to an untyped project measurably improves an agent's success
+rate on it, because it converts runtime failures into static ones.
+
+\paragraph{Loop latency.}
+Each iteration requires building and testing. Where that takes minutes, the
+number of iterations affordable within a budget is small, and the system
+behaves closer to single-pass. Test selection --- running only what the change
+could affect --- is therefore not merely an optimisation but a determinant of
+capability.
+
+\paragraph{Termination.}
+Knowing when to stop is genuinely difficult. Stopping when tests pass risks
+accepting a change that satisfies the tests by disabling them, a failure mode
+observed often enough to require explicit guarding. Continuing indefinitely
+wastes budget on problems the system cannot solve. Detecting the difference
+between productive iteration and thrashing is an open problem, and current
+systems mostly use a fixed iteration cap.
+
+\subsection{New failure modes}
+
+Iteration introduces failures that single-pass generation does not have. An
+agent may make the tests pass by weakening them, delete a failing case rather
+than fix the code, or drift progressively further from the original intent
+across many small edits each of which seemed locally reasonable. These are
+harder to detect in review than a single wrong function, because the
+individual steps look defensible and only the trajectory is wrong.
+
+The practical mitigation is to constrain the action space: forbid edits to
+test files unless the task is explicitly about tests, require the final diff to
+be reviewed as a unit rather than as a sequence, and re-run the original
+failing case at the end to confirm it was fixed rather than removed.
+
+\section{Text-to-SQL: a bounded case}
+\label{sec:sql}
+
+Generating database queries from natural language is a useful sub-problem
+because it isolates the specification difficulty from most of the integration
+difficulty, and it has been studied with unusual rigour \cite{yu2018}.
+
+The target language is small, side-effect-free for reads, and executable
+against a real schema, so verification by execution is straightforward.
+Cross-domain evaluation --- testing on databases unseen in training --- is
+enforced by construction, which makes contamination easier to control than in
+general code benchmarks.
+
+What the setting reveals is that the residual difficulty is almost entirely
+about \emph{schema understanding and question ambiguity}, not about generating
+syntax. Systems fail when a question's terms do not map cleanly onto column
+names, when the schema encodes business logic implicitly, or when the question
+admits several defensible interpretations --- ``top customers'' by revenue,
+volume, or recency. Providing the schema alone is insufficient; providing
+example values and column descriptions helps considerably.
+
+This is the same conclusion as Section~\ref{sec:spec}, arrived at in a
+narrower domain where it can be measured. Where the specification is
+unambiguous the models are strong; the difficulty is that specifications
+rarely are, and no amount of generation capability resolves an ambiguity the
+requester did not.
+
+\section{Economic and workflow effects}
+\label{sec:workflow}
+
+A survey concerned with usefulness should note what changes when these tools
+are adopted, since the effects are not confined to typing speed.
+
+Measured productivity gains are real and unevenly distributed. Tasks that are
+well specified, boilerplate-heavy and in a popular language show the largest
+improvements. Tasks requiring understanding of an unfamiliar system show
+smaller ones, and the time saved in writing is partly consumed by time spent
+reviewing.
+
+Two second-order effects deserve mention. First, the cost asymmetry between
+writing and reviewing code shifts. When generating a plausible implementation
+becomes nearly free, the bottleneck moves entirely to verification, and teams
+that lack strong testing and review practices find that the constraint binds
+sooner than they expect. Second, the incentive to write code that is easy for
+a machine to work with --- clear interfaces, informative types, fast tests ---
+increases, since those properties determine how well the tools perform, as
+Section~\ref{sec:agentic} describes.
+
+There is also a plausible risk that reliance degrades the reviewer's ability
+to review, since expertise in reading code is partly maintained by writing it.
+We are not aware of good evidence either way, and it seems worth measuring
+before the answer is assumed.
+
+\section{Discussion}
+\label{sec:discussion}
+
+The trajectory of this field is a progressive weakening of what is guaranteed
+in exchange for a progressive broadening of what is attempted. Deductive
+synthesis guaranteed correctness against a specification nobody could write.
+Example-based synthesis guaranteed consistency with the examples. Neural
+synthesis guarantees nothing and handles specifications people actually write.
+
+We do not think this trade was wrong; the usefulness is evident. But the
+verification apparatus has not kept pace with the generation capability, and
+the gap is where the practical risk sits. Tests remain the standard, tests are
+demonstrably thin \cite{liu2023}, and the properties tests do not capture ---
+security above all --- are precisely those a fluent generator gets wrong in
+correlated ways.
+
+The most promising direction, in our view, is not better generation but
+cheaper verification: lightweight formal methods applicable without a full
+specification, property-based testing generated alongside the code, and static
+analysis integrated into the loop rather than applied afterwards. A generator
+that is right eight times in ten is far more valuable when the two failures
+are caught automatically.
+
+\section{Open problems}
+\label{sec:open}
+
+Four questions seem to us to matter most and to be least settled.
+
+\paragraph{How should ambiguity be surfaced rather than resolved?}
+A model that silently picks an interpretation is worse than one that asks,
+yet current systems almost never ask. Detecting that a specification is
+underdetermined --- as distinct from being unable to satisfy it --- is a
+capability that would change the interaction substantially, and it is not
+what the training objective rewards.
+
+\paragraph{What replaces pass@$k$?}
+Equation~\ref{eq:passk} measures whether any of $k$ samples passes a test
+suite. It captures neither security, nor maintainability, nor whether the
+solution matches the intent behind the specification. A composite measure
+would be more useful and is harder to define, which is presumably why it does
+not exist.
+
+\paragraph{Can verification be made cheap enough to close the loop?}
+The argument of Section~\ref{sec:discussion} is that generation has outpaced
+verification. Property-based tests inferred from the specification, lightweight
+contracts checked at runtime, and static analysis tuned for generated code all
+seem promising and none is standard practice.
+
+\paragraph{What is the right unit of delegation?}
+Current systems are asked either for a function or for a whole issue
+resolution. The former is too small to be worth the interaction cost; the
+latter is frequently too large to verify. The intermediate unit --- a
+well-scoped change with explicit acceptance criteria --- appears to be where
+these systems perform best, and constructing such units is itself a skill that
+the tooling does not currently support.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Neural program synthesis has made the specification natural and the guarantee
+absent. It works well on well-specified, self-contained problems and less well
+on the ambiguous, integrated, convention-laden tasks that constitute most
+software work --- a difference the dominant benchmarks are structurally unable
+to show, and which contamination has made harder still to measure.
+
+The two properties most in need of attention are both invisible to pass@$k$.
+Specification ambiguity determines whether the generated program is the one
+that was wanted; security determines whether it is safe to run. Neither is a
+test outcome. Progress on the benchmarks has been rapid and genuine; progress
+on these has not been measured, largely because the field has not agreed how
+to measure it.
+
+\begin{thebibliography}{99}
+
+\bibitem{austin2021}
+J.~Austin et~al.
+\newblock Program synthesis with large language models.
+\newblock \emph{arXiv:2108.07732}, 2021.
+
+\bibitem{cassano2023}
+F.~Cassano et~al.
+\newblock MultiPL-E: A scalable and polyglot approach to benchmarking neural
+  code generation.
+\newblock \emph{IEEE Transactions on Software Engineering}, 49(7), 2023.
+
+\bibitem{chen2021}
+M.~Chen et~al.
+\newblock Evaluating large language models trained on code.
+\newblock \emph{arXiv:2107.03374}, 2021.
+
+\bibitem{fried2023}
+D.~Fried et~al.
+\newblock InCoder: A generative model for code infilling and synthesis.
+\newblock In \emph{ICLR}, 2023.
+
+\bibitem{gulwani2011}
+S.~Gulwani.
+\newblock Automating string processing in spreadsheets using input-output
+  examples.
+\newblock In \emph{POPL}, 2011.
+
+\bibitem{jain2024}
+N.~Jain et~al.
+\newblock LiveCodeBench: Holistic and contamination-free evaluation of large
+  language models for code.
+\newblock \emph{arXiv:2403.07974}, 2024.
+
+\bibitem{jimenez2024}
+C.~E. Jimenez, J.~Yang, A.~Wettig, S.~Yao, K.~Pei, O.~Press, and K.~Narasimhan.
+\newblock SWE-bench: Can language models resolve real-world GitHub issues?
+\newblock In \emph{ICLR}, 2024.
+
+\bibitem{le2022}
+H.~Le, Y.~Wang, A.~D. Gotmare, S.~Savarese, and S.~C.~H. Hoi.
+\newblock CodeRL: Mastering code generation through pretrained models and deep
+  reinforcement learning.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{li2022}
+Y.~Li et~al.
+\newblock Competition-level code generation with AlphaCode.
+\newblock \emph{Science}, 378(6624):1092--1097, 2022.
+
+\bibitem{liu2023}
+J.~Liu, C.~S. Xia, Y.~Wang, and L.~Zhang.
+\newblock Is your code generated by ChatGPT really correct? Rigorous evaluation
+  of large language models for code generation.
+\newblock In \emph{NeurIPS}, 2023.
+
+\bibitem{manna1971}
+Z.~Manna and R.~J. Waldinger.
+\newblock Toward automatic program synthesis.
+\newblock \emph{Communications of the ACM}, 14(3):151--165, 1971.
+
+\bibitem{nijkamp2023}
+E.~Nijkamp, B.~Pang, H.~Hayashi, L.~Tu, H.~Wang, Y.~Zhou, S.~Savarese, and
+  C.~Xiong.
+\newblock CodeGen: An open large language model for code with multi-turn
+  program synthesis.
+\newblock In \emph{ICLR}, 2023.
+
+\bibitem{pearce2022}
+H.~Pearce, B.~Ahmad, B.~Tan, B.~Dolan-Gavitt, and R.~Karri.
+\newblock Asleep at the keyboard? Assessing the security of GitHub Copilot's
+  code contributions.
+\newblock In \emph{IEEE S\&P}, 2022.
+
+\bibitem{roziere2023}
+B.~Rozière et~al.
+\newblock Code Llama: Open foundation models for code.
+\newblock \emph{arXiv:2308.12950}, 2023.
+
+\bibitem{solar2008}
+A.~Solar-Lezama.
+\newblock \emph{Program Synthesis by Sketching}.
+\newblock PhD thesis, University of California, Berkeley, 2008.
+
+\bibitem{yu2018}
+T.~Yu et~al.
+\newblock Spider: A large-scale human-labeled dataset for complex and
+  cross-domain semantic parsing and text-to-SQL task.
+\newblock In \emph{EMNLP}, 2018.
+
+\bibitem{zhou2023}
+S.~Zhou, U.~Alon, F.~F. Xu, Z.~Jiang, and G.~Neubig.
+\newblock DocPrompting: Generating code by retrieving the docs.
+\newblock In \emph{ICLR}, 2023.
+
+\end{thebibliography}
+
+\end{document}

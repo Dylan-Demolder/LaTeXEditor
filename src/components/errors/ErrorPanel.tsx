@@ -14,15 +14,29 @@ export default function ErrorPanel({ onHide }: Props) {
     compileWarnings,
     compileBadboxes,
     compileMessage,
+    projectPath,
+    activeFilePath,
     setActiveFile,
     setActiveFileContent,
   } = useAppStore();
 
   const handleJumpToError = async (err: LaTeXError) => {
     if (!err.file || err.line === 0) return;
+
+    // The log parser reports a bare filename ("paper.tex"), which readFile
+    // cannot open — it resolved against the app's working directory, threw,
+    // and the catch below swallowed it, so clicking a row silently did
+    // nothing. Resolve against the project root, and fall back to the file
+    // already open when there is no project.
+    const path = err.file.startsWith("/")
+      ? err.file
+      : projectPath
+        ? `${projectPath}/${err.file}`
+        : activeFilePath ?? err.file;
+
     try {
-      const content = await readFile(err.file);
-      setActiveFile(err.file);
+      const content = await readFile(path);
+      setActiveFile(path);
       setActiveFileContent(content);
 
       // Let the editor swap models to the newly-opened file before seeking.

@@ -294,6 +294,40 @@ the same way; the only difference is which endpoint the request goes to.
 
 ---
 
+## Proof it holds up: five papers, written through the editor
+
+`demo-project/papers/` holds five ten-page survey papers — on attention
+mechanisms, graph neural networks for molecules, differential privacy in
+federated learning, retrieval-augmented generation, and neural program
+synthesis. Roughly 3,100 lines of LaTeX and 84 references between them.
+
+They were not written by hand and pasted in. They were authored end to end
+**through the MCP server** — `write_file` to create, `compile` to typeset,
+`get_errors` to check — by an agent driving the editor from outside, exactly
+the workflow described above. Every one compiles to **10 pages with zero
+errors, zero badboxes and zero undefined references**.
+
+Open the folder and press Typeset twice to see them. They are also a decent
+stress test: multi-page documents with `booktabs` tables, numbered equations,
+cross-references and inline bibliographies are where a LaTeX editor's rough
+edges show.
+
+**The exercise was worth more for what it broke than for what it produced.**
+Six real bugs surfaced, none of which had appeared in ordinary use:
+
+| Found | Bug |
+|---|---|
+| Writing the papers | Typeset compiled the **wrong document** — root detection returned the shortest filename, so a folder of five papers always built the same one |
+| Writing the papers | `get_errors` was the only MCP tool requiring an absolute path, so an agent that had just compiled a file got "No such file or directory" asking for its errors |
+| Reviewing the output | Seven references were never cited — `thebibliography` does not warn about this the way BibTeX does |
+| Reviewing the output | The MCP `compile` response returned 7.9 KB of font paths per call; now 49 bytes plus a page count |
+| Reviewing the output | Issues rows showed `:0` for warnings whose line number was sitting in the log text (`on input line 42`) |
+| Reviewing the output | Clicking an issue did nothing: the parser reports a bare filename, which `readFile` could not resolve, and the error was swallowed |
+
+The last two are why the Issues panel now actually jumps to the right line.
+
+---
+
 ## Fifteen minutes to your first report
 
 First launch offers a hands-on tutorial — nine steps ending in a finished
@@ -423,8 +457,6 @@ Stated plainly, because a feature list that hides its gaps is a sales pitch:
 - **AI context comes from the open file** — `\label`s in other files of a
   multi-file project are not collected yet (`.bib` keys are, across the project).
 - **One AI request at a time.** Cancel targets the single in-flight call.
-- **The Issues panel shows `main.tex:0`** for warnings whose line number the log
-  parser does not extract, so those rows jump nowhere useful.
 - **No prebuilt binaries, no code signing, no CI.**
 
 ---

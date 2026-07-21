@@ -1,0 +1,624 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\title{Retrieval-Augmented Generation:\\
+       Architecture, Failure Modes, and the Evaluation Problem}
+\author{Prepared with LaTeXEditor}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Retrieval-augmented generation conditions a language model on documents
+fetched at inference time, decoupling knowledge from parameters. The
+motivation is sound: knowledge stored in weights is expensive to update,
+impossible to attribute, and prone to confident fabrication. This paper sets
+out the architecture, then examines where deployed systems actually fail. We
+argue that the field's attention has been disproportionately directed at the
+retriever, while the dominant failure modes in practice arise at the boundary
+between retrieval and generation --- the model ignoring retrieved evidence,
+being actively degraded by irrelevant passages, or attributing a claim to a
+document that does not support it. We also examine the chunking decision,
+which is made early, rarely revisited, and constrains everything downstream.
+Finally we address evaluation, where the compound nature of the system makes
+end-to-end metrics uninformative about which component to fix.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+A language model trained on a corpus stores what it learned in its parameters.
+This is a remarkable form of compression and a poor form of database. The
+knowledge is fixed at training time, cannot be updated without further
+training, cannot be attributed to a source, and --- although models do store a surprising amount of
+relational fact \cite{petroni2019} --- cannot be distinguished by the
+model from a plausible confabulation --- the mechanism that produces a correct
+recollection is the same one that produces a fluent invention.
+
+Retrieval-augmented generation \cite{lewis2020} addresses this by separating
+the two functions. Knowledge lives in an external corpus; the model provides
+language competence and reasoning. At inference the system retrieves relevant
+passages and conditions generation on them. Updating knowledge becomes a
+matter of updating documents. Attribution becomes possible because the
+passages used are known. And the model is given evidence rather than being
+asked to recall.
+
+The approach is now the default for question answering over private corpora,
+and a very large practical literature has grown around it \cite{gao2023}. Much of that
+literature concerns retrieval quality. Our contention is that this emphasis is
+misplaced: in deployed systems the retriever is usually adequate and the
+failures occur elsewhere, in how the generator uses what it is given.
+
+\section{Architecture}
+\label{sec:architecture}
+
+\subsection{The pipeline}
+
+A minimal system has four stages. An offline stage segments documents into
+passages and embeds them into a vector index. At query time the question is
+embedded, the $k$ nearest passages retrieved, those passages placed in the
+prompt, and an answer generated.
+
+Formally, with query $q$, corpus $\mathcal{C}$ and retriever $R$,
+\begin{equation}
+  \hat{y} = \arg\max_y \ p_\theta\big(y \mid q, R_k(q, \mathcal{C})\big),
+\end{equation}
+where $R_k$ returns the $k$ highest-scoring passages. The original formulation
+\cite{lewis2020} marginalises over retrieved documents,
+\begin{equation}
+  p(y \mid q) = \sum_{d \in R_k(q)} p_\eta(d \mid q) \, p_\theta(y \mid q, d),
+  \label{eq:marginal}
+\end{equation}
+which permits training the retriever and generator jointly; REALM
+\cite{guu2020} goes further and trains retrieval into pretraining itself. Almost all
+deployed systems abandon this in favour of simple concatenation, because
+Equation~\ref{eq:marginal} requires backpropagating into the retriever and
+periodically re-indexing the corpus --- operationally awkward and rarely worth
+it.
+
+\subsection{Dense and sparse retrieval}
+
+Sparse retrieval scores by lexical overlap. BM25 \cite{robertson2009} remains
+the standard:
+\begin{equation}
+  \mathrm{BM25}(q, d) = \sum_{t \in q} \mathrm{IDF}(t)
+    \cdot \frac{f(t, d)\,(k_1 + 1)}
+                {f(t, d) + k_1\big(1 - b + b \frac{|d|}{\mathrm{avgdl}}\big)}.
+\end{equation}
+It requires no training, generalises across domains, and handles rare terms ---
+product codes, names, identifiers --- that dense methods embed poorly.
+
+Dense retrieval \cite{karpukhin2020} embeds queries and passages into a shared
+space and scores by inner product, trained contrastively so that a question
+lands near its answer passage. This captures paraphrase and synonymy that
+lexical matching misses.
+
+Neither dominates. Dense methods win on semantic similarity, sparse methods on
+exact terms and out-of-domain corpora \cite{thakur2021}. Hybrid retrieval,
+combining both scores, is standard in production for the straightforward
+reason that their failures are uncorrelated.
+
+\subsection{Approximate search}
+
+Exhaustive inner-product search is linear in corpus size and infeasible at
+scale, so indexes approximate. HNSW \cite{malkov2020} builds a navigable
+small-world graph giving logarithmic search; inverted file indexes with
+product quantisation \cite{johnson2019} partition the space and compress
+vectors. Both trade recall for speed, and the recall lost is
+\emph{invisible downstream}: the generator receives passages and cannot know
+that a better one existed and was missed.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Retrieval approaches and their characteristic strengths.}
+  \label{tab:retrieval}
+  \begin{tabular}{llll}
+    \toprule
+    \textbf{Method} & \textbf{Matches} & \textbf{Strong on} & \textbf{Weak on} \\
+    \midrule
+    BM25 \cite{robertson2009}      & lexical  & rare terms, new domains & paraphrase \\
+    Dense \cite{karpukhin2020}     & semantic & synonymy, intent        & exact identifiers \\
+    Hybrid                          & both     & general use             & tuning the mixture \\
+    Re-ranking \cite{nogueira2019} & pairwise & precision at small $k$  & latency \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Chunking: the decision nobody revisits}
+\label{sec:chunking}
+
+Before any retrieval occurs, documents must be split. This choice is made
+early, encoded in the index, and expensive to change --- and it constrains
+everything downstream more than any subsequent component.
+
+The tension is straightforward. Small chunks embed precisely, because a short
+passage has a focused topic and its embedding is not an average of several.
+But small chunks lack context: a paragraph beginning ``This approach fails
+when the input is sparse'' is uninterpretable without knowing which approach.
+Large chunks preserve context and embed diffusely, so their vectors sit near
+the centroid of the space and retrieve poorly for specific questions.
+
+Several mitigations are in use. Overlapping windows ensure no answer is split
+across a boundary. Structural chunking respects document sections rather than
+fixed token counts, which suits well-formatted sources and fails on
+inconsistent ones. Contextual augmentation prepends a generated summary of the
+parent document to each chunk before embedding, which addresses the
+interpretability problem at the cost of an extra generation pass over the
+corpus. Small-to-big retrieval embeds small chunks for precision but returns
+their enclosing sections for context, decoupling the two requirements --- in
+our judgement the most robust of the available options.
+
+The general point deserves emphasis: a system whose retrieval is judged
+inadequate frequently has a chunking problem rather than a retriever problem,
+and swapping the embedding model will not fix it.
+
+\section{Where deployed systems fail}
+\label{sec:failures}
+
+Assume retrieval works and the relevant passage is in the prompt. Several
+failure modes remain, and these dominate in practice.
+
+\subsection{The model ignores the evidence}
+
+A model with strong parametric knowledge may answer from memory rather than
+from the retrieved passage, particularly when they conflict. If the corpus has
+been updated and the parameters have not, the model may confidently give the
+outdated answer it was trained on while a correct passage sits in its context.
+
+The behaviour depends on the strength of the prior. For obscure facts the
+model defers to the context readily; for facts it is confident about, the
+retrieved passage may be overridden. This is precisely the wrong way round for
+a system whose purpose is to supply current information.
+
+\subsection{Irrelevant context degrades performance}
+
+More damaging, and less intuitive, is that retrieved passages which are
+irrelevant do not merely fail to help --- they actively hurt
+\cite{shi2023}. A model given a correct passage plus several irrelevant ones
+performs worse than the same model given the correct passage alone.
+
+This inverts the usual tuning instinct. Increasing $k$ raises the probability
+that the answer is somewhere in the context, and simultaneously raises the
+probability of distraction. Precision matters more than recall beyond a
+modest $k$, which is the main argument for a re-ranking stage
+\cite{nogueira2019}: retrieve broadly, then use a more expensive
+cross-encoder to select the few passages actually worth including.
+
+\subsection{Position effects}
+
+Where a passage sits in the context matters. Models attend most reliably to
+material at the beginning and end of their input and least reliably to the
+middle \cite{liu2024} --- the ``lost in the middle'' effect. A system
+retrieving ten passages and placing the best in the middle by relevance order
+is placing it where it is least likely to be used. Ordering retrieved passages
+so the highest-scoring sit at the extremes is a trivial change that measurably
+improves accuracy, and is frequently omitted.
+
+\subsection{Attribution that does not hold}
+
+Systems that cite sources are trusted more, and the citation is often
+generated rather than derived. A model asked to answer and cite may produce a
+correct answer attributed to the wrong passage, or a claim that the cited
+passage does not support. Because the citation looks like grounding, this is
+more dangerous than an unattributed answer: it transfers unearned confidence.
+Verifying that each generated claim is entailed by its cited passage requires a
+separate entailment check, which few systems perform.
+
+\section{Architectural variants}
+\label{sec:variants}
+
+Several designs depart from prompt concatenation.
+
+\paragraph{Fusion-in-decoder.}
+Rather than concatenating passages into one context, each is encoded
+separately and the decoder attends across all of them \cite{izacard2021}. This
+scales linearly in the number of passages rather than quadratically, allowing
+many more, and avoids the position effects of Section~\ref{sec:failures}
+because passages are not ordered in a sequence. It requires architectural
+access to the model, so it is unavailable behind a generation API.
+
+\paragraph{Retrieval at the token level.}
+$k$NN-LM \cite{khandelwal2020} interpolates the model's next-token
+distribution with one derived from nearest neighbours in a datastore of
+training contexts. RETRO \cite{borgeaud2022} retrieves chunks during
+pretraining and attends to them through dedicated cross-attention layers,
+showing that a smaller model with retrieval can match a much larger one
+without. These integrate retrieval more deeply than prompt-stuffing and
+require training the model accordingly.
+
+\paragraph{Adaptive retrieval.}
+Not every query needs retrieval, and retrieving for a query the model can
+answer directly adds latency and distraction risk. Self-RAG \cite{asai2024}
+trains the model to emit control tokens deciding when to retrieve and to
+critique whether retrieved passages are relevant and whether its own output is
+supported. This makes the decision learned rather than fixed and provides a
+natural place to hang a verification step.
+
+\paragraph{Query transformation.}
+User questions are frequently poor retrieval queries --- underspecified,
+conversational, or containing pronouns referring to earlier turns. Rewriting
+the query before retrieval, decomposing a multi-part question into
+sub-questions, or generating a hypothetical answer and retrieving against that
+all improve recall. These are cheap and effective, and in our experience yield
+larger gains than changing the embedding model.
+
+\section{Evaluation}
+\label{sec:evaluation}
+
+RAG is a compound system, and end-to-end accuracy conflates the contributions
+of its parts. A wrong answer may reflect a chunking failure, a retrieval miss,
+an approximate-index miss, distraction by irrelevant context, or a generation
+error --- and the metric cannot distinguish them.
+
+\subsection{Component metrics}
+
+Retrieval is measured by recall@$k$ --- whether a passage containing the
+answer appears in the top $k$ --- and by ranking measures such as MRR or
+nDCG. These require relevance labels, which are expensive; BEIR
+\cite{thakur2021} provides a standardised heterogeneous suite and is the usual
+reference for retriever comparison.
+
+Generation given context is measured by faithfulness (is every claim supported
+by the provided passages?) and answer relevance (does it address the
+question?). Faithfulness is the property that matters most and is the hardest
+to measure automatically, since it requires entailment judgements over free
+text.
+
+\subsection{Model-based evaluation}
+
+Frameworks such as RAGAS \cite{es2024} use a language model as judge,
+decomposing an answer into claims and checking each against the context. This
+scales where human annotation does not, and it inherits the judge's biases ---
+including a documented preference for longer and more fluent answers
+regardless of correctness. Model-based scores are useful for regression
+detection and unreliable as absolute measures.
+
+\subsection{What to measure in practice}
+
+We would suggest three separable checks. First, retrieval recall against a
+labelled set of query--passage pairs drawn from the actual corpus, which
+isolates chunking and retrieval. Second, generation faithfulness given
+\emph{gold} passages, which isolates the generator. Third, end-to-end accuracy,
+which measures the system. Movement in the third without movement in the first
+two indicates an interaction effect --- usually distraction --- and is
+otherwise attributable.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Diagnosing a wrong answer by component.}
+  \label{tab:diagnosis}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Symptom} & \textbf{Likely cause} & \textbf{Check} \\
+    \midrule
+    Answer absent from all passages & retrieval or chunking & recall@$k$ \\
+    Correct passage present, ignored & distraction or position & re-rank, reorder \\
+    Claim unsupported by cited passage & generation & faithfulness on gold \\
+    Correct but outdated              & parametric override    & conflict test \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Operational considerations}
+\label{sec:operations}
+
+\paragraph{Index freshness.}
+The premise of RAG is that knowledge can be updated without retraining, which
+holds only if the index is actually updated. Incremental indexing, deletion of
+superseded documents, and detection of stale content are unglamorous and
+determine whether the system delivers its central benefit.
+
+\paragraph{Access control.}
+In enterprise deployments not every user may see every document. Filtering
+must occur at retrieval, not after generation --- a passage the user is not
+entitled to see must never enter the prompt, because once it does, its content
+can surface in the answer regardless of any post-hoc filter. Retrofitting
+permissions onto an index built without them is difficult, which argues for
+designing them in from the start.
+
+\paragraph{Latency.}
+Retrieval adds a round trip; re-ranking adds a model call; query rewriting adds
+another. A pipeline with all three can spend more time before generation than
+generating. Where latency matters, adaptive retrieval that skips the pipeline
+for queries not requiring it is the most effective lever.
+
+\paragraph{Cost.}
+Retrieved context dominates prompt length, and prompt length dominates cost.
+Reducing $k$ from ten passages to three often improves accuracy, by the
+distraction argument, while cutting cost proportionally --- one of the few
+genuinely free improvements available.
+
+\section{Conversational retrieval}
+\label{sec:conversational}
+
+Most deployed systems are not single-turn. A user asks a follow-up, and the
+follow-up is frequently unintelligible in isolation --- ``what about the
+second one?'', ``does that apply to contractors?''. Retrieval against such a
+query returns nothing useful, because the terms that would make it specific
+are in the preceding turns.
+
+The standard remedy is query rewriting: a model reformulates the follow-up
+into a self-contained question using the conversation history, and retrieval
+runs against the rewrite. This works well and introduces a failure mode of its
+own, since the rewrite may resolve a reference incorrectly and send retrieval
+confidently in the wrong direction. A rewrite is an unlogged intermediate in
+most implementations, which makes such failures hard to diagnose --- the
+system appears to retrieve badly for a question the user never asked.
+
+An alternative is to retrieve against the concatenated history, which avoids
+the intermediate but dilutes the query with earlier topics. A third is to
+maintain a running summary of the conversation state and retrieve against
+both it and the current turn. We would recommend logging the rewritten query
+regardless of approach; it is the cheapest available observability measure and
+resolves a large fraction of otherwise mysterious retrieval failures.
+
+\paragraph{History and distraction.}
+The distraction result of Section~\ref{sec:failures} applies to conversation
+history as well as retrieved passages. A long history of prior turns occupies
+context and competes for attention with the retrieved evidence. Systems that
+accumulate turns indefinitely degrade for this reason, and truncating or
+summarising history is not merely a cost measure.
+
+\section{Structured and hybrid sources}
+\label{sec:structured}
+
+The architecture of Section~\ref{sec:architecture} assumes the corpus is
+unstructured text. Many real corpora are not, and forcing them into that shape
+loses information.
+
+\paragraph{Tables.}
+A table serialised into a text chunk embeds poorly: the vector reflects the
+column headers and general topic, not the specific values. A question asking
+for a particular cell is unlikely to retrieve the table containing it. Better
+results come from generating a natural-language description of each table for
+retrieval while returning the table itself for generation --- the
+small-to-big pattern of Section~\ref{sec:chunking} applied to a different
+mismatch.
+
+\paragraph{Relational data.}
+Where the answer requires aggregation --- how many, what is the average,
+which is largest --- retrieval cannot supply it, because no passage contains
+the answer. The correct architecture generates a query against a database
+rather than retrieving text. Systems that attempt aggregation through
+retrieval fail in a characteristic way: they retrieve several relevant records
+and produce a confident count based on those, which is wrong whenever the true
+count exceeds $k$.
+
+\paragraph{Knowledge graphs.}
+Where entities and their relationships are explicit, graph traversal answers
+multi-hop questions that flat retrieval handles badly. Retrieving for ``who
+succeeded the person who founded this company'' requires two hops, and a
+single dense query is unlikely to surface both. Hybrid systems retrieve an
+entity subgraph and pass its serialisation to the generator. The cost is that
+the graph must exist, and constructing one from unstructured text is itself
+error-prone.
+
+The general lesson is that ``retrieval'' is the right primitive for questions
+answered by a passage, and the wrong one for questions answered by a
+computation over many records. Recognising which kind a query is --- and
+routing accordingly --- is a more valuable capability than improving either
+path in isolation.
+
+\section{Security considerations}
+\label{sec:security}
+
+Conditioning generation on retrieved documents means allowing documents to
+influence behaviour, and where those documents are not fully trusted this is a
+vulnerability.
+
+\paragraph{Indirect prompt injection.}
+A document in the corpus may contain text addressed to the model rather than
+the reader --- instructions to ignore prior guidance, to exfiltrate context,
+or to produce a particular answer. Because retrieved content enters the same
+context as the system prompt, the model has no reliable way to distinguish
+data from instruction. In a corpus that any user can contribute to, or that
+ingests external web content, this is a live risk rather than a theoretical
+one.
+
+Mitigations are partial. Delimiting retrieved content and instructing the
+model to treat it as data raises the bar without settling the matter.
+Sanitising ingested documents for instruction-like patterns catches obvious
+cases. The structural defence is to constrain what the system can do with a
+compromised generation --- no tool calls derived from retrieved instructions,
+no outbound requests to URLs found in passages --- so that injection cannot
+convert into action.
+
+\paragraph{Corpus poisoning.}
+An adversary able to insert documents can craft passages engineered to be
+retrieved for particular queries and to contain misleading content. Dense
+retrievers are susceptible to embedding-space attacks, where a passage is
+optimised to sit near a target query vector while reading naturally. Provenance
+tracking and restricting write access to the index are the practical defences.
+
+\paragraph{Extraction of the corpus.}
+A system that faithfully quotes retrieved passages will, given enough
+carefully chosen queries, disclose substantial portions of a private corpus.
+Where the corpus is confidential this is a data-loss channel that the access
+controls of Section~\ref{sec:operations} address only if enforced at retrieval
+time.
+
+\section{When not to use retrieval}
+\label{sec:whennot}
+
+A survey of an approach should say where it does not apply, and RAG is applied
+in several places it does not suit.
+
+\paragraph{Stable, compact knowledge.}
+If the knowledge is small, unchanging and central to every query, putting it in
+the system prompt is simpler, faster and more reliable than retrieving it.
+Retrieval introduces a failure mode --- the passage is not retrieved --- that
+a fixed prompt does not have.
+
+\paragraph{Reasoning-dominated tasks.}
+Where the difficulty is inference rather than recall, retrieval adds context
+without adding capability, and by the distraction argument may reduce
+performance. Mathematical problem solving is the clearest case: the relevant
+knowledge is already parametric and the failure is in the reasoning chain.
+
+\paragraph{Style and format tasks.}
+Asking a model to rewrite text in a house style is better served by
+fine-tuning or few-shot examples than by retrieving style guidelines, because
+the requirement is procedural rather than factual. Retrieved rules describe
+what to do; examples demonstrate it, and demonstration transfers better.
+
+\paragraph{Genuinely novel synthesis.}
+Where no document contains the answer because the answer does not yet exist,
+retrieval supplies inputs at best. Presenting such a system as retrieval-backed
+overstates the grounding: the synthesis is the model's, and the citations
+support the premises rather than the conclusion.
+
+The practical recommendation is to route rather than to apply RAG uniformly.
+Classifying an incoming query by what it needs --- fixed context, retrieval,
+computation, or none --- and dispatching accordingly produces a better system
+than any single path, and the classifier need not be sophisticated to beat
+always-retrieve.
+
+\section{Discussion}
+\label{sec:discussion}
+
+The framing that has served us best is that RAG is not a technique but a
+system, and its behaviour is determined by interactions between components
+rather than by the quality of any one.
+
+The evidence for this is that the highest-leverage interventions we have
+described are not retriever improvements. Reordering passages so the best sit
+at the context extremes; reducing $k$ to limit distraction; chunking
+small-to-big; rewriting queries before retrieval; checking entailment before
+citing. None involves a better embedding model, and each addresses a boundary
+between stages.
+
+This suggests that the research emphasis on retrieval quality --- where
+benchmarks are clean and improvements measurable --- has been partly a
+streetlight effect. The failures that matter are harder to benchmark because
+they are properties of the composition.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Retrieval-augmented generation separates knowledge from language competence,
+making knowledge updatable and answers attributable. Both benefits are real
+and neither is automatic.
+
+Deployed systems fail predominantly at the retrieval--generation boundary
+rather than within retrieval: models override provided evidence with
+parametric knowledge, degrade in the presence of irrelevant passages, attend
+unevenly across context positions, and generate citations that do not support
+their claims. The chunking decision, made before any of this and rarely
+revisited, constrains what retrieval can achieve at all.
+
+Evaluation should therefore be componentwise. End-to-end accuracy tells a team
+that something is wrong; separate measurement of retrieval recall and
+grounded-generation faithfulness tells them what. Systems reporting only the
+former are difficult to improve deliberately, and improvements that do arrive
+are difficult to attribute.
+
+\begin{thebibliography}{99}
+
+\bibitem{asai2024}
+A.~Asai, Z.~Wu, Y.~Wang, A.~Sil, and H.~Hajishirzi.
+\newblock Self-RAG: Learning to retrieve, generate, and critique through
+  self-reflection.
+\newblock In \emph{ICLR}, 2024.
+
+\bibitem{borgeaud2022}
+S.~Borgeaud et~al.
+\newblock Improving language models by retrieving from trillions of tokens.
+\newblock In \emph{ICML}, 2022.
+
+\bibitem{es2024}
+S.~Es, J.~James, L.~Espinosa-Anke, and S.~Schockaert.
+\newblock RAGAS: Automated evaluation of retrieval augmented generation.
+\newblock In \emph{EACL}, 2024.
+
+\bibitem{gao2023}
+Y.~Gao, Y.~Xiong, X.~Gao, K.~Jia, J.~Pan, Y.~Bi, Y.~Dai, J.~Sun, and H.~Wang.
+\newblock Retrieval-augmented generation for large language models: A survey.
+\newblock \emph{arXiv:2312.10997}, 2023.
+
+\bibitem{guu2020}
+K.~Guu, K.~Lee, Z.~Tung, P.~Pasupat, and M.-W. Chang.
+\newblock REALM: Retrieval-augmented language model pre-training.
+\newblock In \emph{ICML}, 2020.
+
+\bibitem{izacard2021}
+G.~Izacard and E.~Grave.
+\newblock Leveraging passage retrieval with generative models for open domain
+  question answering.
+\newblock In \emph{EACL}, 2021.
+
+\bibitem{johnson2019}
+J.~Johnson, M.~Douze, and H.~Jégou.
+\newblock Billion-scale similarity search with GPUs.
+\newblock \emph{IEEE Transactions on Big Data}, 7(3):535--547, 2019.
+
+\bibitem{karpukhin2020}
+V.~Karpukhin, B.~Oğuz, S.~Min, P.~Lewis, L.~Wu, S.~Edunov, D.~Chen, and
+  W.-t. Yih.
+\newblock Dense passage retrieval for open-domain question answering.
+\newblock In \emph{EMNLP}, 2020.
+
+\bibitem{khandelwal2020}
+U.~Khandelwal, O.~Levy, D.~Jurafsky, L.~Zettlemoyer, and M.~Lewis.
+\newblock Generalization through memorization: Nearest neighbor language
+  models.
+\newblock In \emph{ICLR}, 2020.
+
+\bibitem{lewis2020}
+P.~Lewis et~al.
+\newblock Retrieval-augmented generation for knowledge-intensive NLP tasks.
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem{liu2024}
+N.~F. Liu, K.~Lin, J.~Hewitt, A.~Paranjape, M.~Bevilacqua, F.~Petroni, and
+  P.~Liang.
+\newblock Lost in the middle: How language models use long contexts.
+\newblock \emph{TACL}, 12:157--173, 2024.
+
+\bibitem{malkov2020}
+Y.~A. Malkov and D.~A. Yashunin.
+\newblock Efficient and robust approximate nearest neighbor search using
+  hierarchical navigable small world graphs.
+\newblock \emph{IEEE TPAMI}, 42(4):824--836, 2020.
+
+\bibitem{nogueira2019}
+R.~Nogueira and K.~Cho.
+\newblock Passage re-ranking with BERT.
+\newblock \emph{arXiv:1901.04085}, 2019.
+
+\bibitem{petroni2019}
+F.~Petroni, T.~Rocktäschel, P.~Lewis, A.~Bakhtin, Y.~Wu, A.~H. Miller, and
+  S.~Riedel.
+\newblock Language models as knowledge bases?
+\newblock In \emph{EMNLP}, 2019.
+
+\bibitem{robertson2009}
+S.~Robertson and H.~Zaragoza.
+\newblock The probabilistic relevance framework: BM25 and beyond.
+\newblock \emph{Foundations and Trends in Information Retrieval},
+  3(4):333--389, 2009.
+
+\bibitem{shi2023}
+F.~Shi, X.~Chen, K.~Misra, N.~Scales, D.~Dohan, E.~Chi, N.~Schärli, and
+  D.~Zhou.
+\newblock Large language models can be easily distracted by irrelevant
+  context.
+\newblock In \emph{ICML}, 2023.
+
+\bibitem{thakur2021}
+N.~Thakur, N.~Reimers, A.~Rücklé, A.~Srivastava, and I.~Gurevych.
+\newblock BEIR: A heterogeneous benchmark for zero-shot evaluation of
+  information retrieval models.
+\newblock In \emph{NeurIPS Datasets and Benchmarks}, 2021.
+
+\end{thebibliography}
+
+\end{document}

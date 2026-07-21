@@ -1,0 +1,667 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+
+\title{Attention Mechanisms in Sequence Modelling:\\
+       Architectures, Complexity, and Practical Efficiency}
+\author{Prepared with LaTeXEditor}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Attention has become the dominant primitive for sequence modelling, displacing
+recurrence in machine translation, language modelling, and increasingly in
+vision and the sciences. This paper reviews the mechanism from first
+principles, derives its computational and memory profile, and surveys the
+families of methods that have been proposed to reduce its quadratic cost:
+sparse attention, low-rank and kernel approximations, and IO-aware exact
+methods. We argue that the field's framing of ``efficient attention'' as a
+single problem obscures a more useful distinction between \emph{training-time}
+cost, dominated by the attention matrix, and \emph{inference-time} cost,
+dominated by the key--value cache. Methods that address one frequently do
+nothing for the other, and several widely cited approximations have been
+superseded in practice by exact methods with better memory behaviour. We close
+with the evaluation problem: reported speedups are rarely comparable, because
+they are measured at different sequence lengths, batch sizes, and levels of
+hardware utilisation.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+For three decades the default approach to modelling sequences was recurrence.
+A hidden state was carried forward one step at a time, and the network's
+capacity to relate distant positions was mediated entirely by that state's
+ability to preserve information across many updates. The long short-term
+memory network \cite{hochreiter1997} made this workable by introducing gated
+paths through which gradients could flow without vanishing, and for two
+decades it and its variants defined the state of the art.
+
+The limitation was structural rather than incidental. Recurrence imposes a
+sequential dependency: position $t$ cannot be computed until position $t-1$
+has been. On hardware whose advantage is parallelism, this is an expensive
+constraint. It also means that the path length between two positions $i$ and
+$j$ grows linearly in $|i - j|$, so the number of operations through which a
+gradient must travel grows with the distance it must cover.
+
+Attention removes both problems at once. Every position attends directly to
+every other, so the path length between any pair is constant, and the
+computation for all positions can be performed in parallel. This is the
+observation that motivated the Transformer \cite{vaswani2017}, and the
+architectural consequences have been far-reaching.
+
+The cost is quadratic. Relating every position to every other requires
+$O(n^2)$ pairwise scores for a sequence of length $n$, in both time and
+memory. At the sequence lengths of early machine translation work --- a few
+hundred tokens --- this was unremarkable. At the lengths now routinely
+demanded, tens or hundreds of thousands of tokens --- driven by the shift to
+large general-purpose models prompted with substantial context
+\cite{brown2020} --- it dominates everything else. A very large literature has grown around reducing it.
+
+This paper has three aims. Section~\ref{sec:background} and
+Section~\ref{sec:transformer} establish the mechanism and its cost precisely,
+because much of the efficiency literature is imprecise about which term it is
+actually reducing. Sections~\ref{sec:sparse} through \ref{sec:io} survey the
+main families of approach. Section~\ref{sec:inference} then argues that the
+training-time and inference-time problems are distinct, and that conflating
+them has caused the field to over-value some methods and under-value others.
+
+\section{Background: from recurrence to alignment}
+\label{sec:background}
+
+Attention did not arrive with the Transformer. It was introduced as a fix for
+a specific failure of encoder--decoder translation models
+\cite{bahdanau2015}. In those models the entire source sentence was compressed
+into a single fixed-width vector, and translation quality degraded sharply as
+sentences grew longer --- the vector became an information bottleneck.
+
+The proposal was to let the decoder look back at all encoder states rather
+than a single summary. At each decoding step $t$ the model computes a
+distribution over source positions,
+\begin{equation}
+  \alpha_{tj} = \frac{\exp(e_{tj})}{\sum_{k=1}^{n} \exp(e_{tk})},
+  \qquad
+  e_{tj} = a(s_{t-1}, h_j),
+  \label{eq:bahdanau}
+\end{equation}
+where $h_j$ is the encoder state at source position $j$, $s_{t-1}$ the decoder
+state, and $a$ a small feed-forward network. The context vector
+$c_t = \sum_j \alpha_{tj} h_j$ is then a weighted average of source states,
+with the weights chosen by the model.
+
+Two properties of Equation~\ref{eq:bahdanau} carried over into everything that
+followed. First, the weights are \emph{content-based}: they depend on what is
+in the states, not on their positions. Second, they are normalised, so
+attention is a redistribution of a fixed budget rather than an unbounded gain.
+Both properties are preserved in the Transformer.
+
+\section{The Transformer}
+\label{sec:transformer}
+
+\subsection{Scaled dot-product attention}
+
+The Transformer \cite{vaswani2017} replaces the learned alignment function $a$
+with a dot product, which is cheaper and maps directly onto matrix
+multiplication hardware. Given queries $Q \in \mathbb{R}^{n \times d_k}$, keys
+$K \in \mathbb{R}^{n \times d_k}$ and values $V \in \mathbb{R}^{n \times d_v}$,
+\begin{equation}
+  \mathrm{Attention}(Q, K, V)
+    = \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right) V.
+  \label{eq:attention}
+\end{equation}
+
+The scaling by $\sqrt{d_k}$ is not cosmetic. If the components of $q$ and $k$
+are independent with zero mean and unit variance, then $q \cdot k$ has
+variance $d_k$. Without the correction, the magnitude of the logits grows with
+the head dimension, pushing the softmax into a regime where it is
+near-deterministic and its gradient is close to zero. Dividing by $\sqrt{d_k}$
+restores unit variance and keeps the function in its responsive range.
+
+\subsection{Multiple heads}
+
+A single attention distribution must commit to one notion of relevance. The
+Transformer instead runs $h$ attention operations in parallel on projections
+of the input,
+\begin{align}
+  \mathrm{MultiHead}(Q,K,V) &= \mathrm{Concat}(\mathrm{head}_1, \dots,
+    \mathrm{head}_h)\, W^O, \\
+  \mathrm{head}_i &= \mathrm{Attention}(QW_i^Q, KW_i^K, VW_i^V).
+\end{align}
+Because $d_k$ is set to $d_{\text{model}} / h$, the total cost is roughly that
+of a single head at full width. The heads are observed empirically to
+specialise --- some track syntactic dependencies, others positional offsets,
+others appear largely redundant, a finding that motivated later work on head
+pruning.
+
+\subsection{Cost}
+\label{sec:cost}
+
+Let $n$ be sequence length and $d$ the model dimension. The two terms that
+matter are:
+\begin{align}
+  \text{attention:} \quad & O(n^2 d) \ \text{time}, \quad O(n^2) \ \text{memory} \\
+  \text{feed-forward:} \quad & O(n d^2) \ \text{time}, \quad O(nd) \ \text{memory}
+\end{align}
+The crossover is at $n \approx d$. Below it the feed-forward layers dominate;
+above it attention does. For a model with $d = 1024$, sequences shorter than
+about a thousand tokens spend most of their time \emph{outside} the attention
+operation --- a fact frequently lost in papers reporting large speedups on
+short benchmarks.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Asymptotic cost of attention variants. $n$ is sequence length,
+           $d$ model dimension, $w$ window size and $r$ projection rank.}
+  \label{tab:complexity}
+  \begin{tabular}{llll}
+    \toprule
+    \textbf{Method} & \textbf{Time} & \textbf{Memory} & \textbf{Exact?} \\
+    \midrule
+    Full attention \cite{vaswani2017}   & $O(n^2 d)$      & $O(n^2)$   & yes \\
+    Sparse \cite{child2019}             & $O(n\sqrt{n}d)$ & $O(n\sqrt{n})$ & no \\
+    Longformer \cite{beltagy2020}       & $O(nwd)$        & $O(nw)$    & no \\
+    Big Bird \cite{zaheer2020}          & $O(nd)$         & $O(n)$     & no \\
+    Linformer \cite{wang2020}           & $O(nrd)$        & $O(nr)$    & no \\
+    Performer \cite{choromanski2021}    & $O(nd^2)$       & $O(nd)$    & no \\
+    Linear attention \cite{katharopoulos2020} & $O(nd^2)$ & $O(nd)$    & no \\
+    FlashAttention \cite{dao2022}       & $O(n^2 d)$      & $O(n)$     & yes \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Sparse attention}
+\label{sec:sparse}
+
+The first family restricts which pairs are computed at all. If each query
+attends to $k \ll n$ keys, cost falls to $O(nkd)$. The design question is
+which $k$.
+
+\paragraph{Fixed patterns.}
+Sparse Transformers \cite{child2019} use strided and local patterns chosen so
+that any two positions are connected within two attention layers, giving
+$O(n\sqrt{n})$ cost. Longformer \cite{beltagy2020} combines a sliding window
+with a small number of global tokens attending everywhere --- a design that
+suits classification, where a single \texttt{[CLS]} position must see the whole
+input.
+
+\paragraph{Theoretical coverage.}
+Big Bird \cite{zaheer2020} adds random connections to window and global
+attention, and shows the result is a universal approximator of sequence
+functions and Turing complete. This is a reassuring result but a weak one: the
+construction requires a number of layers that grows with the sequence, so it
+does not establish that a fixed-depth model retains full attention's
+expressiveness.
+
+\paragraph{The practical difficulty.}
+Sparse patterns produce irregular memory access. A theoretical reduction of
+$8\times$ in FLOPs frequently yields a much smaller wall-clock gain, because
+the resulting kernels utilise the hardware poorly. This gap between arithmetic
+and realised performance is the central lesson of the efficiency literature,
+and it is what motivated the IO-aware approach of Section~\ref{sec:io}.
+
+\section{Low-rank and kernel methods}
+\label{sec:lowrank}
+
+The second family observes that the attention matrix is often approximately
+low-rank, and avoids materialising it.
+
+Linformer \cite{wang2020} projects keys and values to a fixed dimension $r$
+before the product, giving $O(nr)$ cost. The projection is learned and its
+size fixed, which means the model cannot extrapolate to sequences longer than
+those it was trained on --- a serious limitation given that long-context
+extrapolation is precisely what motivates the work.
+
+Kernel methods take a different route. Observing that softmax attention is
+\begin{equation}
+  \mathrm{Attention}(Q,K,V)_i
+    = \frac{\sum_j \exp(q_i \cdot k_j) v_j}{\sum_j \exp(q_i \cdot k_j)},
+\end{equation}
+one may replace $\exp(q \cdot k)$ with a kernel $\phi(q) \cdot \phi(k)$ and
+reassociate:
+\begin{equation}
+  \mathrm{Attention}(Q,K,V)_i
+    = \frac{\phi(q_i) \sum_j \phi(k_j) v_j^{\top}}
+           {\phi(q_i) \sum_j \phi(k_j)}.
+  \label{eq:linear}
+\end{equation}
+The sums are now independent of $i$ and can be computed once, giving $O(n)$
+cost \cite{katharopoulos2020}. Performer \cite{choromanski2021} chooses $\phi$
+as a random feature map that approximates the exponential kernel in
+expectation, with variance controlled by the number of features.
+
+Equation~\ref{eq:linear} also reveals something interesting: in the causal
+case the running sums are a recurrent state, so linear attention is a
+recurrent network with a particular update rule. The field spent five years
+replacing recurrence with attention, and this line of work quietly reintroduces
+it --- an observation made explicit in recent state-space models
+\cite{gu2023}.
+
+\section{IO-aware exact attention}
+\label{sec:io}
+
+The methods above trade accuracy for speed. FlashAttention \cite{dao2022}
+argues the trade is often unnecessary, because attention is not
+compute-bound at all but \emph{memory-bound}: the expensive operation is
+writing the $n \times n$ matrix to high-bandwidth memory and reading it back,
+not the arithmetic.
+
+The solution is tiling. Blocks of $Q$, $K$ and $V$ are loaded into on-chip
+SRAM, the corresponding block of the output is accumulated using an online
+softmax that never requires the full row, and the attention matrix is never
+written out. The result is numerically identical to
+Equation~\ref{eq:attention} --- it is exact --- while reducing memory from
+$O(n^2)$ to $O(n)$ and delivering substantial wall-clock speedups.
+
+This result reframes much of the preceding literature. Approximations that
+were justified by the $O(n^2)$ memory term address a cost that an exact method
+removes. In practice FlashAttention and its successors have displaced most of
+the approximate methods in production systems, and papers proposing new
+approximations are now expected to compare against it rather than against
+naive attention --- a comparison many of the earlier results would not survive.
+
+\section{Positional information}
+\label{sec:positional}
+
+Attention as defined is permutation-equivariant: shuffling the input shuffles
+the output identically. Word order must therefore be injected separately.
+
+The original sinusoidal encodings \cite{vaswani2017} add fixed vectors to the
+input embeddings. Rotary embeddings \cite{su2021} instead rotate queries and
+keys by an angle proportional to position, so that the dot product depends
+only on relative offset:
+\begin{equation}
+  \langle R_{\theta m} q, R_{\theta n} k \rangle = g(q, k, m - n).
+\end{equation}
+This relative property is the reason RoPE extrapolates better than absolute
+schemes, and it has become the default in current models. ALiBi
+\cite{press2022} is simpler still --- a linear bias on the attention scores
+proportional to distance --- and was explicitly designed for train-short,
+test-long generalisation.
+
+\section{The inference problem is a different problem}
+\label{sec:inference}
+
+Almost all of the above targets the attention matrix, which is a
+\emph{training-time} cost. Autoregressive inference has a different profile.
+
+Generating token $t$ requires attending to all previous positions. Rather than
+recompute their keys and values, implementations cache them. The cache has
+size
+\begin{equation}
+  2 \cdot n_{\text{layers}} \cdot n_{\text{heads}} \cdot d_{\text{head}}
+  \cdot n_{\text{tokens}} \cdot b,
+\end{equation}
+with $b$ bytes per element. For a 70B-parameter model at 32{,}000 tokens this
+runs to tens of gigabytes --- frequently exceeding the memory taken by the
+weights, and bounding how many sequences can be served concurrently.
+
+Crucially, none of the approximations in Sections~\ref{sec:sparse}
+and~\ref{sec:lowrank} help with this, because the cache is proportional to
+sequence length regardless of which pairs are scored. The methods that do help
+attack the head structure instead. Multi-query attention \cite{shazeer2019}
+shares a single key--value head across all query heads, dividing the cache by
+$n_{\text{heads}}$ at some cost in quality. Grouped-query attention
+\cite{ainslie2023} interpolates, sharing across groups, and recovers most of
+the quality at most of the saving.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Key--value cache per token, 32-layer model, $d_{\text{model}} = 4096$,
+           16-bit precision.}
+  \label{tab:kvcache}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Scheme} & \textbf{KV heads} & \textbf{Cache/token} \\
+    \midrule
+    Multi-head \cite{vaswani2017}   & 32 & 512\,KB \\
+    Grouped-query \cite{ainslie2023} & 8 & 128\,KB \\
+    Multi-query \cite{shazeer2019}  & 1  & 16\,KB  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The distinction matters for how the literature should be read. A paper
+reporting an $8\times$ reduction in attention cost may deliver no improvement
+whatever to a deployed serving system, if that system's bottleneck is cache
+memory rather than score computation.
+
+\section{Self-attention and cross-attention}
+\label{sec:cross}
+
+Equation~\ref{eq:attention} is stated for arbitrary $Q$, $K$ and $V$, and the
+choice of where those come from determines what the layer does.
+
+In \emph{self-attention} all three derive from the same sequence. The layer
+relates positions within one input, and the resulting representation of each
+token is contextualised by its neighbours. This is the operation that gives
+BERT \cite{devlin2019} its bidirectional character: because no mask is applied,
+every token sees every other, and the representation of an ambiguous word is
+disambiguated by material on both sides of it.
+
+In \emph{cross-attention} the queries come from one sequence and the keys and
+values from another. This is the operation Equation~\ref{eq:bahdanau}
+originally described --- a decoder attending to an encoder --- and it remains
+the mechanism by which conditioning information enters a generative model,
+whether that information is a source sentence, an image, or a retrieved
+document.
+
+\paragraph{Masking.}
+Autoregressive models require that position $t$ not see positions $> t$, which
+is imposed by adding $-\infty$ to the corresponding logits before the softmax:
+\begin{equation}
+  M_{ij} = \begin{cases}
+    0 & j \le i \\
+    -\infty & j > i
+  \end{cases}
+  \qquad
+  \mathrm{Attention}(Q,K,V) =
+    \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}} + M\right)V.
+\end{equation}
+The mask is what makes the difference between an encoder and a decoder; the
+parameters and the operation are otherwise identical. It also halves the useful
+work, since the masked half of the matrix is computed and discarded --- one of
+the easier savings available to a fused implementation.
+
+\section{What the heads learn}
+\label{sec:interpretability}
+
+Because attention weights are normalised and directly inspectable, they invite
+interpretation, and a substantial literature has grown around reading them.
+The results should be treated with more caution than they usually are.
+
+Empirically, heads in trained models do specialise. Some attend to the
+immediately preceding token, some to the syntactic head of the current word,
+some to delimiters or to the first token of the sequence. So-called
+\emph{induction heads} --- which locate an earlier occurrence of the current
+token and attend to whatever followed it --- appear reliably during training
+and are implicated in in-context learning.
+
+Two caveats are frequently omitted. First, a large fraction of heads can be
+pruned after training with little effect on quality, which suggests the
+apparent specialisation of any individual head is not evidence that the model
+depends on it. Second, attention weight is not the same as causal influence: a
+head may attend strongly to a position whose value vector contributes little
+to the output, because the magnitude of $v_j$ matters as much as the weight
+$\alpha_{ij}$. Attribution methods that account for both give a different
+picture from the attention map alone.
+
+The practical consequence is that attention visualisations are a source of
+hypotheses rather than conclusions. They are useful for generating an
+explanation, and insufficient for confirming one.
+
+\section{Normalisation and trainability}
+\label{sec:norm}
+
+A detail of the architecture that receives less attention than the mechanism
+itself, but which determines whether deep models train at all, is where
+layer normalisation is placed.
+
+The original formulation applied it after the residual addition:
+\begin{equation}
+  x_{\ell+1} = \mathrm{LayerNorm}\big(x_\ell + \mathrm{Sublayer}(x_\ell)\big).
+  \label{eq:postln}
+\end{equation}
+This \emph{post-norm} arrangement places the normalisation on the residual
+path, so gradients flowing back through many layers are repeatedly rescaled.
+In practice deep post-norm Transformers require a learning-rate warmup to
+train stably, and become difficult to train at all beyond a few dozen layers.
+
+The \emph{pre-norm} alternative normalises the input to the sublayer instead:
+\begin{equation}
+  x_{\ell+1} = x_\ell + \mathrm{Sublayer}\big(\mathrm{LayerNorm}(x_\ell)\big).
+  \label{eq:preln}
+\end{equation}
+Here the residual stream is untouched, giving gradients a clean path from the
+loss to every layer. Pre-norm models train without warmup and scale to far
+greater depth, which is why essentially all current large models use it. The
+cost is a small quality penalty at equal depth, generally judged worth paying.
+
+This is a useful example of a broader pattern: a change with no effect on the
+function being computed at initialisation can nonetheless determine whether
+the model is trainable. Much of the progress in scaling has come from such
+changes rather than from new mechanisms.
+
+\section{Beyond text}
+\label{sec:vision}
+
+Nothing in Equation~\ref{eq:attention} is specific to language. Given any set
+of vectors, attention relates them. The main obstacle to applying it elsewhere
+has been the quadratic cost, since the natural tokenisation of other
+modalities produces long sequences.
+
+Vision Transformers resolve this by splitting an image into patches --- a
+$224 \times 224$ image at $16 \times 16$ patches gives 196 tokens, a
+manageable length --- and treating the patches as a sequence. The result
+matches or exceeds convolutional networks given sufficient data, though it
+underperforms them in the low-data regime, which is usually attributed to the
+convolution's built-in assumptions of locality and translation equivariance.
+Attention has no such priors and must learn them, which costs data.
+
+The same trade appears wherever attention is applied: it is a more general
+mechanism than the architectures it replaces, and generality is paid for in
+sample efficiency. Where the inductive bias of a specialised architecture is
+correct, that architecture will win at small scale; attention wins when there
+is enough data to learn the structure that the bias would have supplied.
+
+\section{Evaluation}
+\label{sec:evaluation}
+
+Comparing these methods is harder than it appears, for three reasons.
+
+\paragraph{Length dependence.}
+Because attention is quadratic and the feed-forward layers are linear, any
+speedup figure is a function of the length at which it was measured. A method
+reporting $4\times$ at $n = 16{,}000$ may show no gain at $n = 512$, where
+attention is not the bottleneck. Results quoted without the length are
+uninterpretable.
+
+\paragraph{Utilisation.}
+FLOP reductions and wall-clock reductions diverge, sometimes by an order of
+magnitude, because irregular access patterns use the hardware badly. The
+correct measure is time, on stated hardware, for a stated implementation.
+
+\paragraph{Task sensitivity.}
+Long Range Arena \cite{tay2022} was introduced to standardise comparison, and
+remains the most-used benchmark. Its tasks are, however, largely synthetic,
+and strong performance on them has not reliably predicted strong performance
+on language modelling --- several methods that lead the benchmark are not
+competitive on real corpora.
+
+\section{Cost in context: scaling}
+\label{sec:scaling}
+
+A final consideration reframes the efficiency question entirely. Empirical
+scaling work relates model loss to parameters, data, and compute by power
+laws, and shows that for a fixed compute budget there is an optimal allocation
+between model size and training tokens. Early large models were substantially
+under-trained by this criterion --- too many parameters, too few tokens.
+
+The relevance to attention is that context length is a third axis, and it
+interacts with the other two. Extending context is not free even with a linear
+attention mechanism, because the tokens must come from somewhere: doubling the
+context of every training example either halves the number of examples seen at
+fixed compute, or doubles the budget. A method that makes long context
+\emph{possible} does not make it \emph{worthwhile}, and whether the additional
+context earns its cost is a question about the data rather than the
+architecture.
+
+This is visible in practice. Models advertised with very long context windows
+frequently show degraded retrieval accuracy in the middle of that window ---
+the so-called ``lost in the middle'' effect --- because the training
+distribution contained few examples requiring genuine use of distant context.
+The mechanism supports the length; the training did not teach the model to use
+it. Efficiency work that reduces the cost of long sequences addresses only
+half of the problem, and arguably the easier half.
+
+We therefore suggest that the useful question is not ``how cheaply can we
+attend over $n$ tokens'' but ``what is the marginal value of the $n$th token,
+and does it exceed the marginal cost''. The first question is architectural
+and largely solved by the methods of Section~\ref{sec:io}; the second is
+empirical, dataset-dependent, and substantially less well studied.
+
+\section{Open problems}
+\label{sec:open}
+
+Three questions seem to us underdetermined by the current literature.
+
+\paragraph{Is the softmax necessary?}
+Equation~\ref{eq:attention} normalises scores into a distribution, which
+guarantees the output is a convex combination of values and bounds its
+magnitude. Kernel methods (Section~\ref{sec:lowrank}) abandon the exact
+softmax and lose little, which raises the question of what the normalisation
+buys. One answer is competition: because weights sum to one, attending to one
+position costs attention elsewhere, and this pressure may be what drives head
+specialisation. If so, unnormalised variants should show measurably less
+specialisation, which as far as we are aware has not been tested directly.
+
+\paragraph{How much context is used?}
+Reported context windows describe capacity, not behaviour. Measuring how much
+of an available window a model actually exploits requires interventional
+experiments --- perturbing distant context and measuring the effect on the
+prediction --- rather than benchmark accuracy. The few such studies that exist
+suggest effective context is substantially shorter than nominal context, but
+the measurement is not standardised and results are not comparable across
+models.
+
+\paragraph{What replaces attention?}
+State-space models \cite{gu2023} achieve linear scaling with a recurrent
+formulation and are competitive at moderate scale. Whether they match
+attention at frontier scale, and on tasks requiring precise retrieval from
+distant context, remains genuinely open. The honest summary is that attention
+is currently dominant for empirical rather than theoretical reasons, and a
+mechanism with better asymptotics that matched its quality would displace it.
+Several candidates exist; none has yet done so decisively.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Attention replaced recurrence because it removed a sequential dependency and
+shortened gradient paths, at the price of quadratic cost. The subsequent
+literature has attacked that cost from three directions, and their standing
+today is uneven. Sparse and low-rank approximations are theoretically
+attractive but frequently disappointing in wall-clock terms, and are largely
+superseded by exact IO-aware methods that were possible all along and simply
+required attention to the memory hierarchy rather than the operation count.
+
+The more durable lesson is the one in Section~\ref{sec:inference}: ``efficient
+attention'' names two different problems. Training cost is dominated by the
+attention matrix; inference cost is dominated by the key--value cache. Methods
+that address one may do nothing for the other, and a field that reports a
+single efficiency number obscures this. We would encourage authors to state
+plainly which regime a result applies to, at what sequence length, and against
+which baseline.
+
+\begin{thebibliography}{99}
+
+\bibitem{ainslie2023}
+J.~Ainslie, J.~Lee-Thorp, M.~de~Jong, Y.~Zemlyanskiy, F.~Lebrón, and
+S.~Sanghai.
+\newblock GQA: Training generalized multi-query transformer models from
+  multi-head checkpoints.
+\newblock In \emph{EMNLP}, 2023.
+
+\bibitem{bahdanau2015}
+D.~Bahdanau, K.~Cho, and Y.~Bengio.
+\newblock Neural machine translation by jointly learning to align and
+  translate.
+\newblock In \emph{ICLR}, 2015.
+
+\bibitem{beltagy2020}
+I.~Beltagy, M.~E. Peters, and A.~Cohan.
+\newblock Longformer: The long-document transformer.
+\newblock \emph{arXiv:2004.05150}, 2020.
+
+\bibitem{brown2020}
+T.~Brown et~al.
+\newblock Language models are few-shot learners.
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem{child2019}
+R.~Child, S.~Gray, A.~Radford, and I.~Sutskever.
+\newblock Generating long sequences with sparse transformers.
+\newblock \emph{arXiv:1904.10509}, 2019.
+
+\bibitem{choromanski2021}
+K.~Choromanski et~al.
+\newblock Rethinking attention with performers.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem{dao2022}
+T.~Dao, D.~Y. Fu, S.~Ermon, A.~Rudra, and C.~Ré.
+\newblock FlashAttention: Fast and memory-efficient exact attention with
+  IO-awareness.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{devlin2019}
+J.~Devlin, M.-W. Chang, K.~Lee, and K.~Toutanova.
+\newblock BERT: Pre-training of deep bidirectional transformers for language
+  understanding.
+\newblock In \emph{NAACL-HLT}, 2019.
+
+\bibitem{gu2023}
+A.~Gu and T.~Dao.
+\newblock Mamba: Linear-time sequence modeling with selective state spaces.
+\newblock \emph{arXiv:2312.00752}, 2023.
+
+\bibitem{hochreiter1997}
+S.~Hochreiter and J.~Schmidhuber.
+\newblock Long short-term memory.
+\newblock \emph{Neural Computation}, 9(8):1735--1780, 1997.
+
+\bibitem{katharopoulos2020}
+A.~Katharopoulos, A.~Vyas, N.~Pappas, and F.~Fleuret.
+\newblock Transformers are RNNs: Fast autoregressive transformers with linear
+  attention.
+\newblock In \emph{ICML}, 2020.
+
+\bibitem{press2022}
+O.~Press, N.~A. Smith, and M.~Lewis.
+\newblock Train short, test long: Attention with linear biases enables input
+  length extrapolation.
+\newblock In \emph{ICLR}, 2022.
+
+\bibitem{shazeer2019}
+N.~Shazeer.
+\newblock Fast transformer decoding: One write-head is all you need.
+\newblock \emph{arXiv:1911.02150}, 2019.
+
+\bibitem{su2021}
+J.~Su, Y.~Lu, S.~Pan, B.~Wen, and Y.~Liu.
+\newblock RoFormer: Enhanced transformer with rotary position embedding.
+\newblock \emph{arXiv:2104.09864}, 2021.
+
+\bibitem{tay2022}
+Y.~Tay, M.~Dehghani, S.~Abnar, Y.~Shen, D.~Bahri, P.~Pham, J.~Rao, L.~Yang,
+  S.~Ruder, and D.~Metzler.
+\newblock Long Range Arena: A benchmark for efficient transformers.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem{vaswani2017}
+A.~Vaswani, N.~Shazeer, N.~Parmar, J.~Uszkoreit, L.~Jones, A.~N. Gomez,
+  Ł.~Kaiser, and I.~Polosukhin.
+\newblock Attention is all you need.
+\newblock In \emph{NeurIPS}, 2017.
+
+\bibitem{wang2020}
+S.~Wang, B.~Z. Li, M.~Khabsa, H.~Fang, and H.~Ma.
+\newblock Linformer: Self-attention with linear complexity.
+\newblock \emph{arXiv:2006.04768}, 2020.
+
+\bibitem{zaheer2020}
+M.~Zaheer et~al.
+\newblock Big Bird: Transformers for longer sequences.
+\newblock In \emph{NeurIPS}, 2020.
+
+\end{thebibliography}
+
+\end{document}

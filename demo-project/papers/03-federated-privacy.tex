@@ -1,0 +1,623 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\title{Differential Privacy in Federated Learning:\\
+       Guarantees, Gaps, and the Meaning of $\varepsilon$}
+\author{Prepared with LaTeXEditor}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Federated learning trains a shared model without centralising data, and is
+frequently described as privacy-preserving on that basis. It is not. Keeping
+data on-device changes who holds the raw records but does not by itself
+prevent those records being reconstructed from the updates devices send.
+Formal protection requires differential privacy, and composing the two is
+harder than either alone. This paper sets out the threat model precisely,
+derives the guarantee that federated differential privacy provides, and
+examines three gaps between the formal statement and deployed practice: the
+difficulty of interpreting the privacy parameter $\varepsilon$, the mismatch
+between the unit of privacy and the unit users care about, and the interaction
+between privacy noise and the statistical heterogeneity that characterises
+federated data. We argue that reported $\varepsilon$ values are widely
+misread, that many deployments protect a unit that does not correspond to a
+person, and that the accuracy cost of privacy falls unevenly across
+participants in ways that aggregate metrics conceal.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+Federated learning was introduced to train models on data that cannot be
+collected \cite{mcmahan2017}. Mobile keyboards, medical records and financial
+transactions are all subject to constraints --- regulatory, contractual or
+practical --- that make centralising them difficult. The proposal is to send
+the model to the data instead: each participant computes an update on local
+data, and a server aggregates the updates into a shared model.
+
+The privacy claim usually made for this arrangement is that raw data never
+leaves the device. That is true and considerably less protective than it
+sounds. The updates a device sends are functions of its data, and functions of
+data leak information about data. Gradient inversion attacks reconstruct
+recognisable training images from a single update \cite{zhu2019}; membership
+inference determines whether a particular record was in the training set
+\cite{shokri2017}; and large models memorise and can be induced to emit
+verbatim training sequences \cite{carlini2019, carlini2021}.
+
+Data minimisation is therefore necessary but not sufficient. A formal
+guarantee requires differential privacy \cite{dwork2006}, which bounds how
+much any individual's data can influence the output regardless of what an
+adversary knows or subsequently learns. This paper is about what happens when
+that formalism meets the federated setting.
+
+\section{Differential privacy}
+\label{sec:dp}
+
+\subsection{The definition}
+
+A randomised mechanism $\mathcal{M}$ satisfies $(\varepsilon,
+\delta)$-differential privacy if for all adjacent datasets $D, D'$ differing
+in one record, and all measurable $S \subseteq \mathrm{range}(\mathcal{M})$,
+\begin{equation}
+  \Pr[\mathcal{M}(D) \in S]
+    \le e^{\varepsilon} \Pr[\mathcal{M}(D') \in S] + \delta.
+  \label{eq:dp}
+\end{equation}
+
+The definition is a statement about indistinguishability. An adversary
+observing the output cannot determine, beyond a factor $e^{\varepsilon}$,
+whether any particular record was present. Crucially this holds against an
+adversary with arbitrary auxiliary information --- the guarantee does not
+depend on assumptions about what else is known, which is precisely the
+assumption that anonymisation schemes have historically got wrong.
+
+A full development of the definition and its consequences is given by
+\cite{dwork2014}. The parameter $\delta$ admits a failure probability. It should be set well
+below $1/n$ for a dataset of $n$ records, since a mechanism that publishes a
+randomly chosen record in full satisfies $(0, \delta)$-DP with $\delta = 1/n$
+while being catastrophic for the individual concerned.
+
+\subsection{Achieving it}
+
+The standard route is calibrated noise. For a query $f$ with $\ell_2$
+sensitivity
+\begin{equation}
+  \Delta_2 f = \max_{D, D'} \| f(D) - f(D') \|_2,
+\end{equation}
+the Gaussian mechanism releases $f(D) + \mathcal{N}(0, \sigma^2 I)$ with
+$\sigma \ge \Delta_2 f \sqrt{2 \ln(1.25/\delta)} / \varepsilon$.
+
+For gradient-based learning this becomes DP-SGD \cite{abadi2016}: clip each
+per-example gradient to a fixed norm $C$, which bounds sensitivity by
+construction, then add Gaussian noise:
+\begin{equation}
+  \tilde{g} = \frac{1}{B}\left(
+    \sum_{i=1}^{B} g_i \cdot \min\!\left(1, \frac{C}{\|g_i\|_2}\right)
+    + \mathcal{N}(0, \sigma^2 C^2 I) \right).
+  \label{eq:dpsgd}
+\end{equation}
+
+\subsection{Composition}
+
+Training performs many such releases, and privacy loss accumulates. Basic
+composition gives $\varepsilon_{\text{total}} = T\varepsilon$ over $T$ steps,
+which is far too pessimistic to be usable --- thousands of steps would exhaust
+any reasonable budget. Advanced composition improves this to
+$O(\sqrt{T} \varepsilon)$, and the moments accountant \cite{abadi2016} and
+Rényi differential privacy \cite{mironov2017} give tighter bounds still by
+tracking the full privacy loss distribution rather than its worst case.
+
+These accounting improvements are what make private deep learning feasible at
+all. The difference between naive and tight accounting for a realistic
+training run is frequently an order of magnitude in $\varepsilon$, which is
+the difference between a meaningful guarantee and a vacuous one.
+
+\section{The federated threat model}
+\label{sec:threat}
+
+\subsection{Who is the adversary?}
+
+The guarantee depends entirely on who is assumed to be untrusted, and the
+federated literature is not always explicit about this.
+
+\paragraph{Central DP.}
+The server is trusted to see individual updates and adds noise before
+publishing the model. This protects against anyone downstream --- other
+participants, users of the released model --- but not against the server
+itself. Noise is added once to an aggregate, so utility is comparatively good.
+
+\paragraph{Local DP.}
+Each device adds noise before sending, so the server never sees a clean
+update. This assumes nothing about the server, which is a much stronger
+position, but the cost is severe: noise is added $n$ times and aggregation
+averages it down only as $\sqrt{n}$. Local DP at meaningful $\varepsilon$
+typically destroys utility for high-dimensional models, though it has been
+deployed successfully for simple frequency estimation \cite{erlingsson2014}.
+
+\paragraph{Distributed DP.}
+The middle path, and the one most current deployments take. Secure aggregation
+\cite{bonawitz2017} lets the server learn only the sum of updates, never any
+individual one, using cryptographic masking that cancels when summed. Each
+device then adds a fraction of the required noise, so the sum carries the
+right total. This achieves central-DP utility under a local-DP-like trust
+assumption, at the cost of a protocol that must tolerate devices dropping out
+mid-round.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Trust models and their consequences.}
+  \label{tab:trust}
+  \begin{tabular}{llll}
+    \toprule
+    \textbf{Model} & \textbf{Server sees} & \textbf{Noise added} &
+      \textbf{Utility} \\
+    \midrule
+    Central \cite{abadi2016}       & individual updates & once, at server  & best \\
+    Distributed \cite{bonawitz2017} & only the sum      & shared across devices & near-central \\
+    Local \cite{erlingsson2014}    & noised updates only & once per device & poor \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{What the updates leak}
+
+It is worth being concrete about why noise is required. Deep leakage from
+gradients \cite{zhu2019} shows that for small batches, optimising a synthetic
+input to match an observed gradient recovers the original training example
+almost exactly. The attack degrades with batch size and with the number of
+local steps, which is why federated averaging over many local epochs leaks
+less than a single gradient --- but degradation is not prevention, and it
+provides no guarantee against an adversary willing to work harder.
+
+\section{Federated DP-SGD}
+\label{sec:fedsgd}
+
+\subsection{The unit of privacy}
+
+The most consequential design choice is what constitutes an adjacent dataset
+in Equation~\ref{eq:dp}.
+
+\emph{Example-level} privacy protects individual training examples: adjacency
+means one example differs. \emph{User-level} privacy protects everything one
+participant contributed: adjacency means one participant's entire dataset is
+removed \cite{mcmahan2018}. The latter is much stronger, and it is what
+federated deployments should provide, because a participant with a thousand
+examples receives essentially no protection from an example-level guarantee
+--- an adversary learning about all thousand learns about them.
+
+User-level privacy requires clipping the whole model update rather than
+per-example gradients, and the sensitivity is then the clipping norm of that
+update. This is architecturally simpler than DP-SGD but statistically harder,
+because the quantity being clipped is larger and more variable.
+
+\subsection{Amplification by sampling}
+
+Privacy is amplified when the mechanism runs on a random subsample: an
+individual not selected in a round incurs no loss from it. Sampling a fraction
+$q$ of participants gives roughly $\varepsilon_{\text{eff}} \approx q
+\varepsilon$ for small $q$.
+
+Federated deployments have a very large population and sample a small
+committee each round, so amplification is substantial and much of the
+practical feasibility of federated DP rests on it. The subtlety is that the
+formal result requires \emph{uniform random} sampling, and real deployments
+sample devices that happen to be charging, idle and on wi-fi. That is not
+uniform, it correlates with time zone and socioeconomic factors, and the
+amplification claimed is therefore not exactly the amplification obtained.
+This gap is acknowledged in the literature \cite{kairouz2021} and rarely
+quantified.
+
+\section{What does $\varepsilon$ mean?}
+\label{sec:epsilon}
+
+Equation~\ref{eq:dp} is precise, but the number reported alongside it is
+routinely over-interpreted.
+
+\paragraph{It is a worst case, not a description.}
+$\varepsilon$ bounds the influence of the most influential possible record on
+the most revealing possible output. Typical leakage is far below the bound. A
+deployment at $\varepsilon = 8$ is not eight times worse than one at
+$\varepsilon = 1$ in any behavioural sense, and empirical attack success at
+both may be indistinguishable from chance.
+
+\paragraph{It is not comparable across deployments.}
+Two systems reporting $\varepsilon = 4$ may differ in the unit of privacy
+(example versus user), the adjacency definition, whether the accounting covers
+hyperparameter search, and whether $\varepsilon$ is per-round or total. Only
+the last of these is usually stated. Comparing the numbers without the
+definitions is meaningless.
+
+\paragraph{Large $\varepsilon$ is not nothing.}
+Values in the range $\varepsilon = 8$ to $20$ are common in deployed systems
+and give weak formal guarantees --- $e^{8} \approx 3000$, so the
+indistinguishability bound is nearly vacuous. They nonetheless provide real
+protection empirically: the clipping and noise defeat known reconstruction and
+memorisation attacks well before they reach the levels the formalism would
+require. The honest position is that such deployments have a strong empirical
+defence and a weak formal one, and reporting only the $\varepsilon$ obscures
+both halves of that.
+
+\section{Heterogeneity}
+\label{sec:heterogeneity}
+
+Federated data is not independent and identically distributed. Each
+participant's data reflects their own behaviour, so distributions differ
+systematically across the population. This is the defining statistical feature
+of the setting and it interacts badly with privacy.
+
+\subsection{Effects on optimisation}
+
+Under heterogeneity, local optimisation drives each participant's model toward
+their own optimum, and averaging those does not give the global optimum ---
+the phenomenon known as client drift. FedProx \cite{li2020} adds a proximal
+term penalising divergence from the global model; SCAFFOLD
+\cite{karimireddy2020} estimates and corrects the drift directly with control
+variates. Both reduce the number of rounds required.
+
+\subsection{Effects on privacy cost}
+
+The interaction that receives least attention is this. Clipping bounds
+sensitivity by discarding the portion of an update above the threshold. A
+participant whose data is typical produces an update near the population mean
+and is clipped lightly. A participant whose data is unusual produces a large,
+distinctive update and is clipped heavily --- exactly the participant whose
+contribution is most informative, and most in need of protection.
+
+The consequence is that privacy noise degrades accuracy unevenly. Minority
+subgroups, whose updates are atypical by definition, lose more of their signal
+to clipping and are less well represented in the resulting model. Aggregate
+accuracy metrics conceal this entirely: a model can improve on average while
+becoming worse for the participants who differ most from the mean.
+
+This is a fairness problem created by a privacy mechanism, and it does not
+have a clean solution. Adaptive clipping helps by setting the threshold from a
+private quantile estimate rather than a fixed constant, but the underlying
+tension --- that protecting outliers requires suppressing exactly what makes
+them informative --- is intrinsic.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Where the accuracy cost of privacy falls.}
+  \label{tab:fairness}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Participant type} & \textbf{Update magnitude} & \textbf{Effect of clipping} \\
+    \midrule
+    Typical, large local dataset & near population mean & light \\
+    Typical, small local dataset & noisy but centred    & moderate \\
+    Atypical / minority subgroup & large and distinctive & severe \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Systems constraints}
+\label{sec:systems}
+
+The formal analysis assumes a clean protocol; deployments face conditions that
+complicate it.
+
+\paragraph{Dropout.}
+Devices leave mid-round --- battery, connectivity, the user picking up the
+phone. Secure aggregation must tolerate this, and the recovery protocols add
+rounds of communication. Where the noise was distributed across participants,
+dropout means the surviving sum carries less noise than the analysis assumed,
+so the realised $\varepsilon$ is worse than the reported one unless the
+protocol compensates.
+
+\paragraph{Communication.}
+Model updates are large and uplink bandwidth is scarce. Compression --- 
+quantisation, sparsification, low-rank updates --- is essential and interacts
+with privacy: quantisation is itself a randomised mechanism and can be made to
+contribute to the privacy guarantee rather than merely degrading utility, an
+elegant result that few systems exploit.
+
+\paragraph{Hyperparameter search.}
+Choosing the clipping norm and noise multiplier requires experimentation, and
+each configuration evaluated on real data consumes privacy budget. Almost no
+published deployment accounts for this, so the reported $\varepsilon$
+understates the true loss. It is the clearest example of a gap between the
+formalism as analysed and the formalism as practised.
+
+\section{Auditing the guarantee}
+\label{sec:auditing}
+
+A reported $\varepsilon$ is a claim about an implementation, and
+implementations have bugs. Several published privacy analyses have later been
+found to overstate protection because the code did not match the analysis ---
+gradients clipped after averaging rather than before, noise sampled once and
+reused, or an accountant invoked with the wrong sampling rate. The formalism
+provides no defence against a mistake in realising it.
+
+Empirical auditing addresses this by measuring privacy loss rather than
+deriving it. The standard construction inserts \emph{canaries} --- crafted
+records designed to be maximally memorable --- and then tests how well an
+adversary distinguishes a model trained with a given canary from one trained
+without. The distinguishing advantage yields a lower bound on the true
+$\varepsilon$, and if that lower bound exceeds the claimed value, the
+implementation is wrong.
+
+The technique has real teeth. Audits have caught implementation errors in
+widely used libraries, and the lower bounds obtained are informative in their
+own right: for many realistic training configurations the empirical
+$\varepsilon$ is far below the analytical one, which quantifies the looseness
+discussed in Section~\ref{sec:epsilon}. A deployment reporting an analytical
+$\varepsilon = 10$ and an audited lower bound of $1.5$ is telling a more
+complete story than one reporting either alone.
+
+\paragraph{Limitations.}
+Auditing produces a lower bound, so it can falsify a claim but never confirm
+one. A canary that fails to be extracted shows the adversary tried and failed,
+not that a better adversary would. Audits also require training many models,
+which is expensive at realistic scale, so they are typically performed on
+reduced configurations whose relationship to the deployed one is assumed
+rather than demonstrated.
+
+\section{Alternatives and complements}
+\label{sec:alternatives}
+
+Differential privacy is not the only technology in this area, and the others
+address different parts of the problem.
+
+\paragraph{Homomorphic encryption.}
+Computation on encrypted data, so the server aggregates without decrypting.
+This removes the need to trust the server with individual updates and provides
+a cryptographic rather than statistical guarantee. It does not, however,
+protect the \emph{output}: a model trained on encrypted data and then
+decrypted memorises exactly as much as one trained in the clear. Homomorphic
+encryption is a substitute for secure aggregation, not for differential
+privacy, and the two solve orthogonal problems. Its practical obstacle remains
+cost, though schemes tailored to the aggregation pattern have narrowed the gap
+considerably.
+
+\paragraph{Trusted execution environments.}
+Hardware enclaves offer a pragmatic alternative: the server computes on plain
+data inside a region it cannot inspect, attested by the processor. This is
+much faster than cryptographic approaches and shifts the trust to the silicon
+vendor. A steady stream of side-channel vulnerabilities has shown that trust
+to be conditional, and enclaves are best regarded as raising the cost of
+attack rather than eliminating it.
+
+\paragraph{Synthetic data.}
+Generating a private synthetic dataset and training on it freely is
+attractive, since the privacy cost is paid once and downstream use is
+unconstrained. The difficulty is that synthetic data generated under a strict
+privacy budget preserves marginal distributions well and higher-order
+structure poorly, and models trained on it underperform in ways that are hard
+to predict from summary statistics. The approach works best where the
+downstream task is known in advance, so the generator can be tuned to preserve
+what that task needs.
+
+\section{Regulation and the gap it leaves}
+\label{sec:regulation}
+
+The legal frameworks that motivate much of this work do not map cleanly onto
+the formalism, and the mismatch has practical consequences.
+
+Data protection regimes generally distinguish personal data, subject to
+extensive obligations, from anonymous data, which is largely unregulated. The
+question of where differentially private output falls is genuinely unsettled.
+A model trained with a small $\varepsilon$ is intuitively anonymous, but the
+regimes were drafted around a binary notion of identifiability that does not
+accommodate a continuous parameter, and no widely accepted threshold exists.
+
+Two consequences follow. First, organisations have limited incentive to choose
+a small $\varepsilon$ over a large one, since neither reliably changes their
+regulatory position; the choice is made on internal risk judgement instead.
+Second, the right to erasure sits awkwardly with trained models. Removing a
+participant's data from a training set does not remove its influence from a
+model already trained, and retraining is often infeasible. Machine unlearning
+addresses this directly, and differential privacy addresses it indirectly:
+a guarantee that no individual much influenced the model is close to a
+guarantee that removing them would change little.
+
+\paragraph{What would help.}
+Guidance that named an $\varepsilon$ threshold, however arbitrary, would
+change practice more than any technical advance --- it would convert a
+judgement call into a compliance target and give organisations a reason to
+prefer stronger settings. The absence of such guidance is currently the main
+reason deployments cluster at the weak end of the range.
+
+\section{Practical recommendations}
+\label{sec:recommendations}
+
+For practitioners deploying federated learning with privacy, the preceding
+analysis suggests the following.
+
+\paragraph{State the adjacency definition.}
+Report whether the guarantee is example-level or user-level, and if user-level,
+what bounds a single user's contribution. Without this the $\varepsilon$ is
+uninterpretable.
+
+\paragraph{Account for everything.}
+Include hyperparameter search, model selection, and any pilot runs on real
+data in the budget. If this is impractical, say so explicitly rather than
+reporting a figure that covers only the final run.
+
+\paragraph{Audit the implementation.}
+Run a canary-based audit at reduced scale before deployment. It is the only
+practical check that the code implements the analysis.
+
+\paragraph{Report distributional utility.}
+Publish accuracy by subgroup, not only in aggregate. The clipping analysis of
+Section~\ref{sec:heterogeneity} predicts that the cost falls on atypical
+participants, and only disaggregated metrics reveal whether it has.
+
+\paragraph{Prefer distributed DP.}
+Secure aggregation with distributed noise gives central-DP utility without
+requiring participants to trust the server with their individual updates. The
+protocol complexity is real but the trust reduction is substantial, and mature
+implementations now exist.
+
+\section{Cross-silo and cross-device: two different problems}
+\label{sec:silo}
+
+The literature treats federated learning as one setting; it is two, and the
+privacy analysis differs substantially between them.
+
+\emph{Cross-device} federation involves an enormous population of unreliable
+participants each holding little data --- the mobile keyboard case. Sampling
+amplification is strong because the sampling rate is tiny, participants are
+anonymous and interchangeable, and no individual round depends on any
+particular device. Dropout is expected and designed for.
+
+\emph{Cross-silo} federation involves a small number of reliable institutional
+participants each holding a great deal of data --- hospitals collaborating on a
+diagnostic model, or banks on fraud detection. Here almost every assumption
+inverts. With ten participants there is no meaningful sampling amplification.
+Participants are identifiable and persistent, so an update is attributable
+even before its contents are considered. And the unit of privacy becomes
+ambiguous in a way it is not on a phone: protecting the \emph{hospital} is
+usually not what matters, since the hospital is a party to the collaboration;
+protecting each \emph{patient} within it is, and that requires example-level
+or group-level accounting inside each silo as well as across them.
+
+The consequence is that cross-silo deployments generally cannot achieve strong
+user-level DP by the mechanisms of Section~\ref{sec:fedsgd}, and typically
+rely more heavily on secure aggregation, contractual controls and access
+restriction, with differential privacy applied at a weaker setting as one
+layer among several. Papers reporting federated DP results should state which
+regime they address, because a technique that works in one may be inapplicable
+in the other.
+
+\section{Discussion}
+\label{sec:discussion}
+
+Three conclusions follow from the preceding sections.
+
+First, federated learning without differential privacy should not be described
+as privacy-preserving. It provides data minimisation, which is valuable and
+distinct. The reconstruction results \cite{zhu2019} are sufficient to
+establish that raw updates leak, and any claim of privacy needs to say what
+mechanism provides it.
+
+Second, the unit of privacy must be stated. User-level guarantees are what the
+setting calls for and example-level guarantees are what are sometimes
+reported, and the difference is not a technicality --- for a participant
+contributing many correlated records, an example-level guarantee is close to
+no guarantee at all.
+
+Third, aggregate utility metrics are inadequate for evaluating private
+federated systems. The cost of privacy is borne disproportionately by
+atypical participants, so a system should report per-subgroup performance.
+Reporting mean accuracy alongside an $\varepsilon$ describes neither the
+protection nor its distribution.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Differential privacy provides the only guarantee in this area that survives an
+adversary with unknown auxiliary information, and combining it with federated
+learning and secure aggregation gives a deployable system with a real formal
+statement attached. That is a genuine achievement and it is deployed at scale.
+
+The gaps are in interpretation rather than mechanism. $\varepsilon$ is a
+worst-case bound routinely read as a description of typical leakage; it is
+compared across deployments whose definitions differ; the sampling
+amplification that makes the numbers work assumes uniformity that device
+availability violates; hyperparameter search is uncounted; and the accuracy
+cost falls hardest on the participants least represented in the data.
+
+None of these invalidates the approach. They do mean that a reported
+$(\varepsilon, \delta)$ pair is the beginning of a privacy analysis rather
+than its conclusion, and that the field would be better served by reporting
+the adjacency definition, the accounting scope, and the distribution of the
+utility cost alongside the parameter.
+
+\begin{thebibliography}{99}
+
+\bibitem{abadi2016}
+M.~Abadi, A.~Chu, I.~Goodfellow, H.~B. McMahan, I.~Mironov, K.~Talwar, and
+  L.~Zhang.
+\newblock Deep learning with differential privacy.
+\newblock In \emph{ACM CCS}, 2016.
+
+\bibitem{bonawitz2017}
+K.~Bonawitz, V.~Ivanov, B.~Kreuter, A.~Marcedone, H.~B. McMahan, S.~Patel,
+  D.~Ramage, A.~Segal, and K.~Seth.
+\newblock Practical secure aggregation for privacy-preserving machine
+  learning.
+\newblock In \emph{ACM CCS}, 2017.
+
+\bibitem{carlini2019}
+N.~Carlini, C.~Liu, Ú.~Erlingsson, J.~Kos, and D.~Song.
+\newblock The secret sharer: Evaluating and testing unintended memorization in
+  neural networks.
+\newblock In \emph{USENIX Security}, 2019.
+
+\bibitem{carlini2021}
+N.~Carlini et~al.
+\newblock Extracting training data from large language models.
+\newblock In \emph{USENIX Security}, 2021.
+
+\bibitem{dwork2006}
+C.~Dwork, F.~McSherry, K.~Nissim, and A.~Smith.
+\newblock Calibrating noise to sensitivity in private data analysis.
+\newblock In \emph{TCC}, 2006.
+
+\bibitem{dwork2014}
+C.~Dwork and A.~Roth.
+\newblock The algorithmic foundations of differential privacy.
+\newblock \emph{Foundations and Trends in Theoretical Computer Science},
+  9(3--4):211--407, 2014.
+
+\bibitem{erlingsson2014}
+Ú.~Erlingsson, V.~Pihur, and A.~Korolova.
+\newblock RAPPOR: Randomized aggregatable privacy-preserving ordinal response.
+\newblock In \emph{ACM CCS}, 2014.
+
+\bibitem{kairouz2021}
+P.~Kairouz et~al.
+\newblock Advances and open problems in federated learning.
+\newblock \emph{Foundations and Trends in Machine Learning}, 14(1--2):1--210,
+  2021.
+
+\bibitem{karimireddy2020}
+S.~P. Karimireddy, S.~Kale, M.~Mohri, S.~J. Reddi, S.~U. Stich, and A.~T.
+  Suresh.
+\newblock SCAFFOLD: Stochastic controlled averaging for federated learning.
+\newblock In \emph{ICML}, 2020.
+
+\bibitem{li2020}
+T.~Li, A.~K. Sahu, M.~Zaheer, M.~Sanjabi, A.~Talwalkar, and V.~Smith.
+\newblock Federated optimization in heterogeneous networks.
+\newblock In \emph{MLSys}, 2020.
+
+\bibitem{mcmahan2017}
+H.~B. McMahan, E.~Moore, D.~Ramage, S.~Hampson, and B.~A. y~Arcas.
+\newblock Communication-efficient learning of deep networks from decentralized
+  data.
+\newblock In \emph{AISTATS}, 2017.
+
+\bibitem{mcmahan2018}
+H.~B. McMahan, D.~Ramage, K.~Talwar, and L.~Zhang.
+\newblock Learning differentially private recurrent language models.
+\newblock In \emph{ICLR}, 2018.
+
+\bibitem{mironov2017}
+I.~Mironov.
+\newblock Rényi differential privacy.
+\newblock In \emph{IEEE Computer Security Foundations Symposium}, 2017.
+
+\bibitem{shokri2017}
+R.~Shokri, M.~Stronati, C.~Song, and V.~Shmatikov.
+\newblock Membership inference attacks against machine learning models.
+\newblock In \emph{IEEE S\&P}, 2017.
+
+\bibitem{zhu2019}
+L.~Zhu, Z.~Liu, and S.~Han.
+\newblock Deep leakage from gradients.
+\newblock In \emph{NeurIPS}, 2019.
+
+\end{thebibliography}
+
+\end{document}

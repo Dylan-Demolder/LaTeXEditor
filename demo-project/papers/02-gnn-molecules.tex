@@ -1,0 +1,628 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\title{Graph Neural Networks for Molecular Property Prediction:\\
+       Expressiveness, Failure Modes, and What Actually Transfers}
+\author{Prepared with LaTeXEditor}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Molecules are graphs, and the natural way to learn functions of them is with
+architectures that respect that structure. This paper reviews message-passing
+neural networks for molecular property prediction, establishes what they can
+and cannot represent, and examines three failure modes --- over-smoothing,
+over-squashing, and the expressiveness ceiling imposed by the
+Weisfeiler--Leman test --- that are frequently discussed separately but which
+interact. We then turn to a less theoretical question: whether reported gains
+transfer. A recurring finding is that carefully tuned baselines close much of
+the gap to sophisticated architectures on standard benchmarks, and that
+scaffold-split evaluation, which tests generalisation to structurally novel
+compounds, reverses several published rankings. We argue that the field's
+central difficulty is not architectural but distributional, and that progress
+is limited more by the size and coverage of labelled chemical data than by the
+expressiveness of the models applied to it.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+The properties a chemist cares about --- solubility, toxicity, binding
+affinity, synthetic accessibility --- are functions of molecular structure.
+Predicting them computationally has a long history, and until recently the
+dominant approach was to hand-design a fixed-length vector of structural
+features, a \emph{fingerprint}, and fit a conventional model to it.
+
+Fingerprints work well and remain competitive. Their limitation is that the
+features are fixed in advance: the representation cannot adapt to the property
+being predicted. Learning the representation instead was proposed by
+\cite{duvenaud2015}, who replaced the fixed hashing of circular fingerprints
+with a differentiable analogue, and this is the direct ancestor of the
+message-passing networks now standard.
+
+The appeal is obvious. A molecule is naturally a graph --- atoms are nodes,
+bonds are edges --- and a model operating directly on that graph respects the
+symmetries of the object. Permuting the atom indices should not change a
+predicted boiling point, and a graph network guarantees this by construction
+rather than learning it from data.
+
+Whether the appeal has been realised is a more complicated question, and it is
+the subject of this paper. Sections~\ref{sec:mpnn} and \ref{sec:expressive}
+establish the framework and its representational limits.
+Section~\ref{sec:failure} examines three failure modes.
+Sections~\ref{sec:geometry} and \ref{sec:transformers} cover the two main
+lines of response. Section~\ref{sec:evaluation} then argues that the
+evaluation practices of the field have systematically overstated progress.
+
+\section{Message passing}
+\label{sec:mpnn}
+
+Most graph networks are instances of a single framework \cite{gilmer2017}.
+Each node $v$ carries a state $h_v$, updated over $T$ rounds by aggregating
+messages from its neighbours $\mathcal{N}(v)$:
+\begin{align}
+  m_v^{(t+1)} &= \sum_{u \in \mathcal{N}(v)}
+                 M_t\big(h_v^{(t)}, h_u^{(t)}, e_{uv}\big),
+  \label{eq:message} \\
+  h_v^{(t+1)} &= U_t\big(h_v^{(t)}, m_v^{(t+1)}\big),
+  \label{eq:update}
+\end{align}
+where $e_{uv}$ are edge features, $M_t$ is a message function and $U_t$ an
+update function. A graph-level prediction is obtained by pooling:
+\begin{equation}
+  \hat{y} = R\big(\{ h_v^{(T)} : v \in G \}\big),
+\end{equation}
+with $R$ a permutation-invariant readout, typically a sum or mean followed by
+a feed-forward network.
+
+The design space is the choice of $M$, $U$ and $R$. Graph convolutional
+networks \cite{kipf2017} use a degree-normalised mean; GraphSAGE
+\cite{hamilton2017} samples a fixed-size neighbourhood and concatenates rather
+than sums; graph attention networks \cite{velickovic2018} weight neighbours by
+a learned attention coefficient,
+\begin{equation}
+  \alpha_{vu} = \frac{\exp\big(\sigma(a^{\top}[Wh_v \| Wh_u])\big)}
+                      {\sum_{k \in \mathcal{N}(v)}
+                       \exp\big(\sigma(a^{\top}[Wh_v \| Wh_k])\big)}.
+\end{equation}
+
+\paragraph{The receptive field.}
+After $T$ rounds a node's state depends on its $T$-hop neighbourhood, and no
+further. This is the graph analogue of a convolutional receptive field, and it
+has an immediate chemical consequence: a property determined by the
+relationship between two distant functional groups cannot be represented
+unless $T$ exceeds the distance between them. Typical implementations use
+$T = 3$ to $5$, which covers local chemistry well and long-range interactions
+not at all.
+
+\section{Expressiveness}
+\label{sec:expressive}
+
+There is a precise characterisation of what message passing can distinguish
+\cite{xu2019, morris2019}: no message-passing network can distinguish two
+graphs that the one-dimensional Weisfeiler--Leman (1-WL) colour refinement
+test fails to distinguish.
+
+The argument is direct. 1-WL iteratively refines a colouring by hashing each
+node's colour together with the multiset of its neighbours' colours ---
+structurally the same operation as Equations~\ref{eq:message}
+and~\ref{eq:update}. A network can therefore be no more discriminative than
+the test, and is exactly as discriminative when its aggregation is injective.
+
+Graph isomorphism networks \cite{xu2019} achieve this bound by using a sum
+aggregator with a multi-layer perceptron,
+\begin{equation}
+  h_v^{(t+1)} = \mathrm{MLP}\Big( (1 + \epsilon) h_v^{(t)} +
+                \sum_{u \in \mathcal{N}(v)} h_u^{(t)} \Big),
+\end{equation}
+since sum is injective over multisets in a way that mean and max are not: mean
+cannot distinguish a node with two identical neighbours from one with one, and
+max discards multiplicity entirely.
+
+\paragraph{Does the ceiling matter chemically?}
+The standard illustration is that 1-WL cannot distinguish certain regular
+graphs, and the standard chemical instance is that it cannot count cycles.
+Since aromaticity is a ring property with strong effects on reactivity, this
+looks serious. In practice it is less so than it appears, because molecular
+graphs are annotated: atom features typically include ring membership and
+aromaticity flags computed by a cheminformatics toolkit. The information that
+1-WL cannot derive is supplied as input.
+
+This is worth stating plainly, because a good deal of architectural work is
+motivated by the WL bound while the empirical gain from exceeding it is
+frequently small. The bound constrains what the network can \emph{compute};
+it says nothing about what it must compute when the features already encode
+the answer.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Aggregation functions and their injectivity over multisets.}
+  \label{tab:aggregation}
+  \begin{tabular}{llll}
+    \toprule
+    \textbf{Aggregator} & \textbf{Injective?} & \textbf{Distinguishes} &
+      \textbf{Typical use} \\
+    \midrule
+    Sum \cite{xu2019}       & yes & multiset          & expressiveness-critical \\
+    Mean \cite{kipf2017}    & no  & distribution      & node classification \\
+    Max \cite{hamilton2017} & no  & underlying set    & skeleton detection \\
+    Attention \cite{velickovic2018} & no & weighted distribution & heterogeneous graphs \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Three failure modes}
+\label{sec:failure}
+
+\subsection{Over-smoothing}
+
+Stacking message-passing layers makes node representations converge. Each
+round averages a node with its neighbours, and repeated averaging is a
+diffusion process whose fixed point is constant over any connected component
+\cite{li2018}. After enough rounds every node carries the same vector and all
+structural information is lost.
+
+The practical effect is that graph networks are shallow. Where image
+classifiers went from eight layers to over a hundred and improved throughout,
+graph networks typically peak at three to five and degrade after. Residual
+connections, jumping knowledge and explicit normalisation all mitigate the
+problem without removing it.
+
+\subsection{Over-squashing}
+
+The second failure is nearly the opposite \cite{alon2021}. Information from an
+exponentially growing $T$-hop neighbourhood must be compressed into a
+fixed-width node vector. Where the graph has a bottleneck --- a bridge edge
+through which many paths must pass --- the messages crossing it are squashed,
+and long-range signal is lost regardless of depth.
+
+The two failures place the architecture in a vice. Adding layers to reach
+distant nodes worsens over-smoothing; keeping the model shallow leaves distant
+nodes unreachable. Molecules are relatively small and often tree-like, which
+limits the damage, but for the long-thin molecules common in medicinal
+chemistry the bottleneck is real.
+
+\subsection{Depth without benefit}
+
+Together these produce the field's most conspicuous empirical regularity: on
+most molecular benchmarks, a well-tuned three-layer network is as good as
+anything deeper. The result is stable across datasets and architectures, and
+it should be read as a statement about the mechanism rather than about tuning
+effort.
+
+\section{Adding geometry}
+\label{sec:geometry}
+
+A molecular graph omits something a chemist would consider essential:
+three-dimensional structure. Two stereoisomers have identical graphs and
+different properties. Any purely topological model is blind to the difference.
+
+Geometric networks take atomic coordinates as input. The difficulty is that
+predictions must be invariant to rotation and translation --- rotating a
+molecule does not change its energy --- and naive use of coordinates violates
+this. SchNet \cite{schutt2017} obtains invariance by using only interatomic
+distances, expanded in a radial basis:
+\begin{equation}
+  h_v^{(t+1)} = h_v^{(t)} + \sum_{u \ne v}
+    W\big(\| r_v - r_u \|\big) \odot h_u^{(t)}.
+\end{equation}
+Distances are invariant, so the model is. But distances alone do not determine
+geometry: two conformations can share all pairwise distances between bonded
+atoms and differ in torsion. DimeNet \cite{gasteiger2020} adds angular
+information via directional messages, and E($n$)-equivariant networks
+\cite{satorras2021} go further, producing outputs that transform correctly
+under rotation rather than being merely invariant.
+
+\paragraph{The conformer problem.}
+Geometric models require coordinates, and coordinates require a conformer.
+Molecules are flexible; the relevant conformer is often the bound one, which
+is unknown. Generating conformers computationally introduces error that is
+frequently larger than the difference between architectures being compared.
+This is a data problem masquerading as a modelling problem, and it accounts
+for much of the inconsistency in reported geometric-model performance.
+
+\section{Graph transformers}
+\label{sec:transformers}
+
+The response to over-squashing that has gained most ground is to abandon
+locality. If every node attends to every other, bottlenecks are irrelevant and
+the receptive field is the whole graph after one layer \cite{ying2021}.
+
+The immediate objection is that this discards the structure entirely --- a
+transformer over nodes has no notion of which are bonded. Graph transformers
+reinject it as a bias on the attention scores, typically a learned function of
+shortest-path distance:
+\begin{equation}
+  A_{ij} = \frac{(h_i W^Q)(h_j W^K)^{\top}}{\sqrt{d}} + b_{\phi(i,j)},
+\end{equation}
+where $\phi(i,j)$ is the distance between nodes. Hybrid designs
+\cite{rampasek2022} run message passing and global attention in parallel and
+combine them, on the reasoning that local chemistry is best handled by the
+former and long-range effects by the latter.
+
+Molecules are small enough that the quadratic cost of attention is not
+prohibitive --- a hundred atoms gives a $100 \times 100$ matrix --- so the
+trade that dominates the sequence literature does not bind here. The
+constraint is data rather than compute.
+
+\section{Evaluation, and why the rankings move}
+\label{sec:evaluation}
+
+MoleculeNet \cite{wu2018} standardised evaluation and is the most-used
+benchmark suite. Its adoption has been valuable and has also entrenched
+several practices that flatter new methods.
+
+\paragraph{Split choice dominates.}
+A random split places structurally similar molecules in both train and test,
+so the task rewards interpolation. A scaffold split groups by core structure,
+so the test set is structurally novel --- the situation an actual discovery
+programme faces. Scaffold performance is invariably worse, often dramatically,
+and the ranking of methods under the two splits is not the same. Results
+reported under random splits should be treated as upper bounds that do not
+describe the intended use case.
+
+\paragraph{Baselines are undertuned.}
+Repeated reproduction studies have found that gradient-boosted trees on
+conventional fingerprints, given tuning effort comparable to that lavished on
+the proposed model, match or beat graph networks on a majority of MoleculeNet
+tasks. The datasets are small --- many have a few thousand labelled compounds
+--- and in that regime a learned representation has little advantage over a
+good fixed one.
+
+\paragraph{Datasets are small and biased.}
+Labelled molecular data is expensive: each point is an experiment. The
+datasets are correspondingly small and drawn from historical medicinal
+chemistry programmes, so they cover the regions of chemical space that
+chemists have already explored. A model that generalises within that region
+may be useless outside it, and the benchmark cannot detect the difference.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Effect of split choice on reported performance. Values are
+           indicative of the pattern reported across the literature rather
+           than a single measurement.}
+  \label{tab:splits}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Split} & \textbf{Tests} & \textbf{Reported performance} \\
+    \midrule
+    Random             & interpolation within known chemistry & highest \\
+    Scaffold           & generalisation to novel cores        & substantially lower \\
+    Time-based         & prospective prediction               & lowest \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Where the approach has worked}
+\label{sec:success}
+
+The critical tone above should not obscure genuine successes, which share a
+common shape: large screening libraries, a clear binary label, and use of the
+model as a filter rather than an oracle.
+
+The best-known is the identification of halicin as an antibacterial
+\cite{stokes2020}. A graph network trained on a growth-inhibition screen was
+used to rank a large library, and a highly ranked compound with no structural
+similarity to known antibiotics was confirmed experimentally. The model did
+not predict a property precisely; it reduced a hundred million candidates to a
+few hundred worth testing, which is exactly what a noisy but cheap predictor
+is good for.
+
+Structure prediction \cite{jumper2021} is the other landmark, and although the
+architecture is not a message-passing network in the sense of
+Section~\ref{sec:mpnn}, it shares the essential feature of operating on a
+structured representation with the right symmetries. Its success rests on
+something the molecular property field lacks: a large, curated, consistent
+body of experimental structures accumulated over decades.
+
+\section{Pretraining and transfer}
+\label{sec:pretraining}
+
+The size of labelled molecular datasets is the binding constraint identified
+in Section~\ref{sec:evaluation}, and the obvious response is the one that
+worked in language: pretrain on abundant unlabelled data, fine-tune on the
+scarce labelled task. Unlabelled molecules are genuinely abundant --- public
+databases hold hundreds of millions of structures --- so the ingredients are
+present.
+
+Several pretext tasks have been proposed. Node-level objectives mask an atom
+and predict its identity from context, directly analogous to masked language
+modelling. Edge-level objectives predict whether a bond exists between two
+atoms. Graph-level objectives predict cheap computed descriptors, or bring
+representations of two conformers of the same molecule together while pushing
+apart those of different molecules.
+
+The results have been mixed in an instructive way. Node-level masking in
+particular can \emph{hurt} downstream performance, a phenomenon termed
+negative transfer. The likely explanation is that predicting a masked atom is
+nearly trivial given valence rules --- a carbon with four single bonds to
+carbons is overwhelmingly a carbon --- so the objective is satisfied by
+learning local chemistry the model would learn anyway, while the
+representation is shaped by a task with no bearing on the property of
+interest.
+
+This contrasts sharply with language, where masked-token prediction is
+genuinely hard and requires broad understanding. The lesson is that a pretext
+task must be difficult to be useful, and difficulty is a property of the
+domain rather than of the objective's form. Objectives that predict computed
+quantum properties, which are expensive to calculate but cheap to obtain in
+bulk from simulation, transfer more reliably --- they are hard, and their
+difficulty is of the right kind.
+
+\section{Uncertainty and calibration}
+\label{sec:uncertainty}
+
+A property predictor used to prioritise experiments is only as useful as its
+uncertainty estimates. Ranking a library by predicted activity is worthwhile
+only if the model can also indicate where it is guessing, since the compounds
+most worth testing are frequently those the model has least reason to be
+confident about.
+
+Neural networks are notoriously overconfident, and graph networks are no
+exception. The standard remedies transfer directly: deep ensembles, which
+train several models with different initialisations and use the spread of
+their predictions; Monte Carlo dropout, which is cheaper and generally worse;
+and post-hoc calibration on a held-out set.
+
+The molecular setting adds a specific difficulty. The relevant uncertainty is
+usually \emph{epistemic} --- the model has not seen anything like this
+compound --- rather than aleatoric noise in the assay. Epistemic uncertainty
+should grow with distance from the training distribution, and the natural
+measure of that distance is chemical similarity. Methods that combine a
+learned predictor with an explicit similarity-to-training-set term are
+consistently better calibrated on scaffold splits than methods relying on the
+network's own confidence, precisely because the network has no representation
+of what it has not seen.
+
+\paragraph{Applicability domain.}
+Classical cheminformatics has a name for this: the applicability domain of a
+model, the region of chemical space in which its predictions can be trusted.
+The concept predates deep learning and is arguably more important now, since
+larger models extrapolate more confidently and no less wrongly. Reporting a
+prediction without an applicability judgement is an omission the older
+literature would not have permitted.
+
+\section{Interpretation}
+\label{sec:interpretation}
+
+A medicinal chemist asked to act on a prediction reasonably wants to know
+which part of the molecule drove it. This is both a trust requirement and a
+design one: knowing that a particular substructure is responsible for
+predicted toxicity suggests what to change.
+
+Attribution methods for graphs assign importance to nodes, edges or
+subgraphs. Gradient-based approaches propagate sensitivity back to atom
+features; perturbation-based approaches delete substructures and measure the
+effect; and subgraph-search methods look for the minimal fragment that
+preserves the prediction.
+
+Two difficulties recur. First, molecular attributions are frequently unstable
+--- small perturbations to the input, or retraining with a different seed,
+produce materially different attributions, which is hard to reconcile with the
+claim that they reveal something about the chemistry. Second, and more
+fundamentally, deleting a substructure from a molecule does not produce
+another molecule; it produces an invalid graph with unfilled valences. The
+counterfactual the method requires is not chemically meaningful, and what the
+model reports about it is not obviously interpretable.
+
+The approaches that survive contact with practice tend to be those that stay
+within chemical space --- comparing matched molecular pairs that differ by a
+single well-defined substitution, for example, which is a manipulation
+chemists already use and understand. This is a general pattern: attribution is
+most reliable when the counterfactual is one the domain admits.
+
+\section{Practical considerations}
+\label{sec:practical}
+
+Several details determine whether a graph model works in practice and receive
+less attention than architecture.
+
+\paragraph{Featurisation.}
+The initial atom and bond features matter a great deal. A typical featuriser
+supplies element, degree, formal charge, hybridisation, aromaticity, ring
+membership and hydrogen count. As noted in Section~\ref{sec:expressive},
+several of these encode information the message passing could not otherwise
+derive, so featurisation choices interact with expressiveness claims. Papers
+comparing architectures on different featurisers are not comparing
+architectures.
+
+\paragraph{Hydrogen treatment.}
+Most implementations suppress explicit hydrogens and encode counts as atom
+features, which shrinks graphs by roughly half. For properties dominated by
+hydrogen bonding this loses relevant structure, and explicit-hydrogen models
+sometimes do better at a substantial cost in graph size.
+
+\paragraph{Tautomers and protonation.}
+A molecule as drawn is one of several tautomeric forms, and the form present
+at physiological pH may not be the one in the dataset. Different databases
+standardise differently, so the same compound can appear as different graphs
+across datasets. This is a persistent and under-reported source of label noise
+in aggregated benchmarks.
+
+\paragraph{Duplicate and near-duplicate leakage.}
+Public datasets aggregated from multiple sources contain the same compound
+more than once, sometimes with inconsistent labels. Where a random split
+places duplicates on both sides, measured performance is inflated. Careful
+deduplication by canonical structure is a precondition for meaningful
+evaluation and is not always performed.
+
+\section{Active learning and the discovery loop}
+\label{sec:activelearning}
+
+The deployment setting for these models is rarely a single prediction. It is a
+loop: predict over a library, select compounds, test them, retrain on the
+results, repeat. This changes what makes a model good.
+
+In a one-shot setting the objective is accuracy over the whole distribution.
+In a loop it is the quality of the selected batch, and those differ. A model
+that is accurate on average but confidently wrong at the top of its ranking is
+worse than a less accurate model that knows where it is uncertain, because
+only the top of the ranking is ever tested. This is why the calibration
+discussion of Section~\ref{sec:uncertainty} is not a refinement but a central
+concern.
+
+Acquisition strategy also matters more than architecture in early rounds.
+Selecting purely by predicted activity exploits the current model and gathers
+data where it is already confident, which teaches it little. Selecting by
+uncertainty explores but wastes tests on compounds unlikely to be active.
+Batch diversity constraints --- requiring selected compounds to be
+structurally dissimilar from one another --- are often more valuable than
+either, since a batch of near-identical molecules returns essentially one
+measurement.
+
+\paragraph{Evaluation implications.}
+None of this is captured by a static benchmark. A model's value in a discovery
+loop depends on how its errors are distributed relative to its confidence, and
+on how the data it induces improves the next round. Simulating the loop
+retrospectively over a screening library is possible and rarely done; it would
+be a substantially more informative benchmark than the static splits currently
+used, and would likely reorder the rankings again.
+
+\section{Discussion}
+\label{sec:discussion}
+
+The theoretical literature on graph networks is unusually well developed.
+We know the expressiveness ceiling exactly, we understand over-smoothing as
+diffusion and over-squashing as capacity, and architectures exist that address
+each. It is therefore striking how little of this translates into reliable
+gains on the tasks the field cares about.
+
+Our reading is that the binding constraint is elsewhere. The datasets are
+small, biased toward explored chemistry, and evaluated in ways that reward
+interpolation. In that regime the difference between a WL-limited and a
+WL-exceeding architecture is not what determines performance; the difference
+between a random and a scaffold split is far larger than the difference
+between any two models under either.
+
+This suggests a reallocation of effort. Better benchmarks --- prospective,
+scaffold-split, with honest uncertainty quantification --- would do more for
+the field than better aggregation functions. So would investment in data:
+the successes in Section~\ref{sec:success} came from large consistent
+screening sets, not from architectural novelty.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Message passing gives a principled way to learn functions of molecules,
+respecting permutation symmetry by construction and adapting the
+representation to the task. Its limits are well characterised: bounded by
+1-WL, shallow because of over-smoothing, and unable to carry long-range signal
+across bottlenecks. Geometric and transformer variants address specific
+failures at specific costs.
+
+What the field has not established is that these architectural distinctions
+determine practical performance. Tuned fingerprint baselines remain
+competitive, scaffold splits reorder published rankings, and the clearest
+successes came from problems with abundant consistent data used as filters
+rather than oracles. Until evaluation reflects the deployment setting, further
+architectural refinement is likely to yield benchmark improvements that do not
+transfer.
+
+\begin{thebibliography}{99}
+
+\bibitem{alon2021}
+U.~Alon and E.~Yahav.
+\newblock On the bottleneck of graph neural networks and its practical
+  implications.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem{duvenaud2015}
+D.~Duvenaud, D.~Maclaurin, J.~Aguilera-Iparraguirre, R.~Gómez-Bombarelli,
+  T.~Hirzel, A.~Aspuru-Guzik, and R.~P. Adams.
+\newblock Convolutional networks on graphs for learning molecular
+  fingerprints.
+\newblock In \emph{NeurIPS}, 2015.
+
+\bibitem{gasteiger2020}
+J.~Gasteiger, J.~Groß, and S.~Günnemann.
+\newblock Directional message passing for molecular graphs.
+\newblock In \emph{ICLR}, 2020.
+
+\bibitem{gilmer2017}
+J.~Gilmer, S.~S. Schoenholz, P.~F. Riley, O.~Vinyals, and G.~E. Dahl.
+\newblock Neural message passing for quantum chemistry.
+\newblock In \emph{ICML}, 2017.
+
+\bibitem{hamilton2017}
+W.~L. Hamilton, R.~Ying, and J.~Leskovec.
+\newblock Inductive representation learning on large graphs.
+\newblock In \emph{NeurIPS}, 2017.
+
+\bibitem{jumper2021}
+J.~Jumper et~al.
+\newblock Highly accurate protein structure prediction with AlphaFold.
+\newblock \emph{Nature}, 596:583--589, 2021.
+
+\bibitem{kipf2017}
+T.~N. Kipf and M.~Welling.
+\newblock Semi-supervised classification with graph convolutional networks.
+\newblock In \emph{ICLR}, 2017.
+
+\bibitem{li2018}
+Q.~Li, Z.~Han, and X.-M. Wu.
+\newblock Deeper insights into graph convolutional networks for
+  semi-supervised learning.
+\newblock In \emph{AAAI}, 2018.
+
+\bibitem{morris2019}
+C.~Morris, M.~Ritzert, M.~Fey, W.~L. Hamilton, J.~E. Lenssen, G.~Rattan, and
+  M.~Grohe.
+\newblock Weisfeiler and Leman go neural: Higher-order graph neural networks.
+\newblock In \emph{AAAI}, 2019.
+
+\bibitem{rampasek2022}
+L.~Rampášek, M.~Galkin, V.~P. Dwivedi, A.~T. Luu, G.~Wolf, and D.~Beaini.
+\newblock Recipe for a general, powerful, scalable graph transformer.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem{satorras2021}
+V.~G. Satorras, E.~Hoogeboom, and M.~Welling.
+\newblock E($n$) equivariant graph neural networks.
+\newblock In \emph{ICML}, 2021.
+
+\bibitem{schutt2017}
+K.~T. Schütt, P.-J. Kindermans, H.~E. Sauceda, S.~Chmiela, A.~Tkatchenko, and
+  K.-R. Müller.
+\newblock SchNet: A continuous-filter convolutional neural network for
+  modeling quantum interactions.
+\newblock In \emph{NeurIPS}, 2017.
+
+\bibitem{stokes2020}
+J.~M. Stokes et~al.
+\newblock A deep learning approach to antibiotic discovery.
+\newblock \emph{Cell}, 180(4):688--702, 2020.
+
+\bibitem{velickovic2018}
+P.~Veličković, G.~Cucurull, A.~Casanova, A.~Romero, P.~Liò, and Y.~Bengio.
+\newblock Graph attention networks.
+\newblock In \emph{ICLR}, 2018.
+
+\bibitem{wu2018}
+Z.~Wu, B.~Ramsundar, E.~N. Feinberg, J.~Gomes, C.~Geniesse, A.~S. Pappu,
+  K.~Leswing, and V.~Pande.
+\newblock MoleculeNet: A benchmark for molecular machine learning.
+\newblock \emph{Chemical Science}, 9:513--530, 2018.
+
+\bibitem{xu2019}
+K.~Xu, W.~Hu, J.~Leskovec, and S.~Jegelka.
+\newblock How powerful are graph neural networks?
+\newblock In \emph{ICLR}, 2019.
+
+\bibitem{ying2021}
+C.~Ying, T.~Cai, S.~Luo, S.~Zheng, G.~Ke, D.~He, Y.~Shen, and T.-Y. Liu.
+\newblock Do transformers really perform badly for graph representation?
+\newblock In \emph{NeurIPS}, 2021.
+
+\end{thebibliography}
+
+\end{document}
