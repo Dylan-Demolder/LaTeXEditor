@@ -183,6 +183,25 @@ async fn handle_write_file(args: &Value, project_path: &Arc<Mutex<Option<String>
     }
 }
 
+/// Last `n` lines of a blob, for surfacing a diagnostic without the preamble.
+fn tail_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
+/// Pages reported by pdflatex.
+///
+/// The log is hard-wrapped at 79 columns, so "Output written on x.pdf (10
+/// pages" can be split mid-word — matching line by line silently misses it.
+/// Newlines are stripped before searching.
+fn page_count(log: &str) -> Option<u32> {
+    let flat: String = log.chars().filter(|c| *c != '\n').collect();
+    let idx = flat.rfind(" pages")?;
+    let head = &flat[..idx];
+    let start = head.rfind('(')? + 1;
+    head[start..].trim().parse().ok()
+}
+
 async fn handle_compile(args: &Value, project_path: &Arc<Mutex<Option<String>>>) -> CallToolResult {
     let tex_path = resolve_path(args, project_path).await;
     let tex_file = PathBuf::from(&tex_path);
@@ -202,8 +221,12 @@ async fn handle_compile(args: &Value, project_path: &Arc<Mutex<Option<String>>>)
                 format!("Elapsed: {}ms", result.elapsed_ms),
             ];
 
-            if !result.stdout.is_empty() {
-                parts.push(format!("--- stdout ---\n{}", result.stdout));
+            // Deliberately not the whole stdout. A successful pdflatex run
+            // emits several hundred lines of font and package paths, which for
+            // an MCP client is thousands of tokens saying nothing. On failure
+            // the tail is where the diagnostic lives, so keep that much.
+            if !result.success && !result.stdout.is_empty() {
+                parts.push(format!("--- output (tail) ---\n{}", tail_lines(&result.stdout, 40)));
             }
 
             if let Some(ref log_path) = result.log_path {
@@ -212,6 +235,16 @@ async fn handle_compile(args: &Value, project_path: &Arc<Mutex<Option<String>>>)
                     if let Ok(log_content) = tokio::fs::read_to_string(&log_p).await {
                         let main_tex = tex_file.file_name().unwrap_or_default().to_str().unwrap_or("doc.tex");
                         let parsed = parser::parse_log(&log_content, main_tex);
+
+                        // The page count is the single most useful fact about a
+                        // successful build and was the one thing a client had
+                        // to parse the log itself to get.
+                        if let Some(pages) = page_count(&log_content) {
+                            parts.push(format!("Pages: {}", pages));
+                        }
+                        if !parsed.badboxes.is_empty() {
+                            parts.push(format!("Badboxes: {}", parsed.badboxes.len()));
+                        }
                         if !parsed.errors.is_empty() {
                             let err_lines: Vec<String> = parsed.errors.iter().map(|e| {
                                 format!("Line {}: {}", e.line, e.message)
@@ -410,6 +443,33 @@ mod tests {
 
     /// With no project open there is nothing to resolve against; the path is
     /// passed through rather than being silently joined to an empty root.
+    /// The wrapped-log case that made a naive line-by-line match fail: real
+    /// pdflatex output splits "(10 pages" across the 79-column boundary.
+    #[test]
+    fn page_count_survives_the_log_line_wrap() {
+        let wrapped = "...fonts here...\nOutput written on /a/b/04-rag.pdf (10 pag\nes, 286439 bytes).\n";
+        assert_eq!(page_count(wrapped), Some(10));
+    }
+
+    #[test]
+    fn page_count_reads_an_unwrapped_line() {
+        assert_eq!(
+            page_count("Output written on main.pdf (7 pages, 100 bytes).\n"),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn page_count_is_none_when_nothing_was_written() {
+        assert_eq!(page_count("! LaTeX Error: something went wrong.\n"), None);
+    }
+
+    #[test]
+    fn tail_lines_returns_the_end_and_tolerates_short_input() {
+        assert_eq!(tail_lines("a\nb\nc\nd", 2), "c\nd");
+        assert_eq!(tail_lines("only", 10), "only");
+    }
+
     #[tokio::test]
     async fn resolve_path_passes_through_when_no_project_is_open() {
         let project = Arc::new(Mutex::new(None));

@@ -267,8 +267,20 @@ export default function FileTree() {
       )}
       <div className="flex-1 overflow-y-auto p-1.5">
         {files.length === 0 ? (
+          // An open-but-empty project is a real state — you have just made a
+          // folder, or an agent is about to write into it. Telling someone to
+          // open a project they already have open is confusing and, worse,
+          // suggests the open failed.
           <div className="px-4 py-6 text-ink-3 text-tiny text-center">
-            Open a project folder to browse files
+            {projectPath ? (
+              <>
+                This project has no files yet.
+                <br />
+                Use <span className="text-ink-2">+</span> above to create one.
+              </>
+            ) : (
+              "Open a project folder to browse files"
+            )}
           </div>
         ) : (
           files.map((entry) => (

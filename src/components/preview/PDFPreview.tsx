@@ -72,6 +72,9 @@ export default function PDFPreview() {
       .catch(() => {});
   }, []);
 
+  /** Which document is on screen, so a reload can tell a rebuild from a switch. */
+  const loadedPathRef = useRef<string | null>(null);
+
   const loadPdf = useCallback(async (path: string) => {
     setLoading(true);
     setError(null);
@@ -79,11 +82,18 @@ export default function PDFPreview() {
       const data = await readPdf(path);
       const uint8 = new Uint8Array(data);
       const doc = await pdfjsLib.getDocument({ data: uint8 }).promise;
+
+      // Recompiling the document you are reading should keep your place;
+      // opening a *different* document should not. Landing on page 8 of a new
+      // paper because that is where you were in the last one reads as a bug.
+      const isSameDocument = loadedPathRef.current === path;
+      loadedPathRef.current = path;
+
       setPdfDoc(doc);
       setNumPages(doc.numPages);
-      // Recompiles reload the same document; keep the reader where they were
-      // instead of yanking them back to page 1 on every build.
-      setPageNum((p) => Math.min(Math.max(p, 1), doc.numPages));
+      setPageNum((p) =>
+        isSameDocument ? Math.min(Math.max(p, 1), doc.numPages) : 1
+      );
     } catch (e) {
       setError(`Failed to load PDF: ${e}`);
       setPdfDoc(null);
