@@ -115,7 +115,7 @@ pub async fn call_tool(
         "read_file" => handle_read_file(&args, &project_path).await,
         "write_file" => handle_write_file(&args, &project_path).await,
         "compile" => handle_compile(&args, &project_path).await,
-        "get_errors" => handle_get_errors(&args).await,
+        "get_errors" => handle_get_errors(&args, &project_path).await,
         "get_project_structure" => handle_get_structure(&args, &project_path).await,
         "get_section_structure" => handle_section_structure(&args, &project_path).await,
         _ => CallToolResult {
@@ -246,9 +246,17 @@ async fn handle_compile(args: &Value, project_path: &Arc<Mutex<Option<String>>>)
     }
 }
 
-async fn handle_get_errors(args: &Value) -> CallToolResult {
-    let tex_path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-    let tex_file = PathBuf::from(tex_path);
+async fn handle_get_errors(
+    args: &Value,
+    project_path: &Arc<Mutex<Option<String>>>,
+) -> CallToolResult {
+    // Must go through resolve_path like every other tool. Reading the raw
+    // argument made this the only tool requiring an absolute path: a relative
+    // one resolved against the app process's working directory, so an agent
+    // that had just written and compiled "paper.tex" successfully got
+    // "No such file or directory" when asking for its errors.
+    let tex_path = resolve_path(args, project_path).await;
+    let tex_file = PathBuf::from(&tex_path);
     let stem = tex_file.file_stem().unwrap_or_default().to_str().unwrap_or("");
     let dots = PathBuf::from(".");
     let parent = tex_file.parent().unwrap_or(&dots);
@@ -375,5 +383,37 @@ async fn handle_section_structure(args: &Value, project_path: &Arc<Mutex<Option<
             }],
             is_error: Some(true),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every path-taking tool must accept a project-relative path. get_errors
+    /// once read the raw argument instead of calling resolve_path, so it was
+    /// the only tool that demanded an absolute one — an inconsistency an agent
+    /// hits immediately after a successful compile.
+    #[tokio::test]
+    async fn resolve_path_makes_relative_paths_project_relative() {
+        let project = Arc::new(Mutex::new(Some("/tmp/proj".to_string())));
+        let args = json!({ "path": "paper.tex" });
+        assert_eq!(resolve_path(&args, &project).await, "/tmp/proj/paper.tex");
+    }
+
+    #[tokio::test]
+    async fn resolve_path_leaves_absolute_paths_alone() {
+        let project = Arc::new(Mutex::new(Some("/tmp/proj".to_string())));
+        let args = json!({ "path": "/elsewhere/paper.tex" });
+        assert_eq!(resolve_path(&args, &project).await, "/elsewhere/paper.tex");
+    }
+
+    /// With no project open there is nothing to resolve against; the path is
+    /// passed through rather than being silently joined to an empty root.
+    #[tokio::test]
+    async fn resolve_path_passes_through_when_no_project_is_open() {
+        let project = Arc::new(Mutex::new(None));
+        let args = json!({ "path": "paper.tex" });
+        assert_eq!(resolve_path(&args, &project).await, "paper.tex");
     }
 }

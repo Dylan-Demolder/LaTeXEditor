@@ -145,8 +145,30 @@ pub struct Dependency {
     pub kind: String, // "input" or "include"
 }
 
+/// Locate the document to compile.
+///
+/// `active_file` is the file the user is editing. If it is itself a root ---
+/// it has its own `\\documentclass` --- then it *is* what they want typeset,
+/// and no search is needed. This matters in a project holding several
+/// independent documents: the fallback below picks the shortest path, so a
+/// folder of five standalone papers would always compile the one with the
+/// shortest filename no matter which was open.
+///
+/// The search is only the right answer when the open file is a fragment
+/// pulled in by `\\input`, which has no `\\documentclass` of its own.
 #[tauri::command]
-pub async fn find_root_file(project_path: String) -> Result<String, String> {
+pub async fn find_root_file(
+    project_path: String,
+    active_file: Option<String>,
+) -> Result<String, String> {
+    if let Some(active) = active_file.as_deref().filter(|a| !a.is_empty()) {
+        if let Ok(content) = std::fs::read_to_string(active) {
+            if content.contains("\\documentclass") {
+                return Ok(active.to_string());
+            }
+        }
+    }
+
     let path = PathBuf::from(&project_path);
 
     // Scan all .tex files for \documentclass — that's the root
@@ -188,7 +210,10 @@ pub async fn find_root_file(project_path: String) -> Result<String, String> {
     }
     scan_dir(&path, &mut candidates)?;
 
-    // Return the primary candidate (shortest path is likely the root)
+    // Fallback: the open file is a fragment, so guess. A shorter path is more
+    // likely to be the root (main.tex beside sections/intro.tex), which is a
+    // reasonable heuristic for a single-document project and only reached when
+    // the open file gave us nothing better.
     candidates.sort_by_key(|c| c.len());
     candidates
         .first()
@@ -211,4 +236,63 @@ pub async fn get_dependencies(tex_path: String) -> Result<Vec<Dependency>, Strin
     }
 
     Ok(deps)
+}
+
+#[cfg(test)]
+mod root_file_tests {
+    use super::*;
+
+    fn write(dir: &std::path::Path, name: &str, body: &str) -> String {
+        let p = dir.join(name);
+        std::fs::write(&p, body).unwrap();
+        p.to_string_lossy().to_string()
+    }
+
+    /// A project of several standalone documents must compile the one you are
+    /// editing. The fallback sorts by path length, so without this the folder
+    /// below would always compile "b.tex" regardless of what was open.
+    #[tokio::test]
+    async fn an_open_root_document_is_what_gets_compiled() {
+        let dir = std::env::temp_dir().join("le-rootfile-standalone");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let long = write(&dir, "a-much-longer-name.tex", "\\documentclass{article}\\begin{document}A\\end{document}");
+        write(&dir, "b.tex", "\\documentclass{article}\\begin{document}B\\end{document}");
+
+        let got = find_root_file(dir.to_string_lossy().to_string(), Some(long.clone()))
+            .await
+            .unwrap();
+        assert_eq!(got, long, "should compile the open document, not the shortest path");
+    }
+
+    /// A fragment has no \documentclass, so the root that includes it is found.
+    #[tokio::test]
+    async fn an_open_fragment_falls_back_to_the_real_root() {
+        let dir = std::env::temp_dir().join("le-rootfile-fragment");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir.join("sections")).unwrap();
+
+        let main = write(&dir, "main.tex", "\\documentclass{article}\\begin{document}\\input{sections/intro}\\end{document}");
+        let frag = write(&dir.join("sections"), "intro.tex", "Just a fragment, no preamble.");
+
+        let got = find_root_file(dir.to_string_lossy().to_string(), Some(frag))
+            .await
+            .unwrap();
+        assert_eq!(got, main, "a fragment should resolve to the document including it");
+    }
+
+    /// With nothing open the heuristic still applies.
+    #[tokio::test]
+    async fn no_active_file_uses_the_shortest_candidate() {
+        let dir = std::env::temp_dir().join("le-rootfile-none");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir.join("sections")).unwrap();
+
+        let main = write(&dir, "main.tex", "\\documentclass{article}\\begin{document}x\\end{document}");
+        write(&dir.join("sections"), "appendix.tex", "\\documentclass{article}\\begin{document}y\\end{document}");
+
+        let got = find_root_file(dir.to_string_lossy().to_string(), None).await.unwrap();
+        assert_eq!(got, main);
+    }
 }

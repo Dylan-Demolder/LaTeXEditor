@@ -278,8 +278,11 @@ export async function synctexInverse(
 }
 
 // Multi-file
-export async function findRootFile(projectPath: string): Promise<string> {
-  return invoke("find_root_file", { projectPath });
+export async function findRootFile(
+  projectPath: string,
+  activeFile?: string | null
+): Promise<string> {
+  return invoke("find_root_file", { projectPath, activeFile: activeFile ?? null });
 }
 
 export async function getDependencies(texPath: string): Promise<any[]> {

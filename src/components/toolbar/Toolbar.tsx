@@ -81,10 +81,12 @@ export default function Toolbar({ onNewFromTemplate, onOpenPlugins, onOpenSettin
 
     let texFile = activeFilePath;
 
-    // Smart compile: find root .tex file (the one with \documentclass)
+    // Compile the open file when it is itself a root document; otherwise find
+    // the root that \input{}s it. Passing the active file is what stops a
+    // project of several standalone documents always compiling the same one.
     if (projectPath) {
       try {
-        const root = await findRootFile(projectPath);
+        const root = await findRootFile(projectPath, activeFilePath);
         if (root) texFile = root;
       } catch {}
     }
