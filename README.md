@@ -148,6 +148,53 @@ Skills are typed by what they produce, so the UI matches: rewrites are diffed
 and applied, generated blocks insert at the cursor, and explanations are
 copy-only — no misleading Apply button on an explanation.
 
+### Skills in action
+
+Not mock-ups — the actual output of the actual skills.
+
+**Paste Data → Table.** Paste this, exactly as it comes off a spreadsheet:
+
+```
+Region,Q2 Revenue,Q3 Revenue,Change
+EMEA,1.24,1.81,+46%
+APAC,0.92,1.13,+23%
+Americas,2.10,2.04,-3%
+```
+
+and Insert at cursor gives you:
+
+```latex
+\begin{table}[htbp]
+\centering
+\caption{Revenue by Region}
+\label{tab:revenue-region}
+\begin{tabular}{lrrr}
+\toprule
+Region & Q2 Revenue & Q3 Revenue & Change \\
+\midrule
+EMEA   & 1.24       & 1.81       & +46\%  \\
+APAC   & 0.92       & 1.13       & +23\%  \\
+Americas & 2.10     & 2.04       & -3\%   \\
+\bottomrule
+\end{tabular}
+\end{table}
+```
+
+Numeric columns right-aligned, `booktabs` rules because the preamble loads
+`booktabs` — and every `%` escaped to `\%`. A single unescaped one would have
+commented out the rest of its row.
+
+**Explain Equation.** Select the four lines of Maxwell's equations and it
+returns a page of prose — identifying them by name, defining every symbol (∇·,
+∇×, ρ, **J**, ε₀, μ₀), then walking each law in plain English:
+
+> This set of four equations is known as **Maxwell's Equations in a vacuum**…
+> **∇ · E = ρ / ε₀** — "The amount of electric field spreading out from a point
+> is equal to the amount of electric charge at that point."
+
+There is no Apply button on this one, because an explanation is for you to read,
+not to paste into your document.
+
 ### Let an agent work on it too
 
 A Model Context Protocol server runs on `127.0.0.1:9876`, exposing the open
@@ -162,6 +209,39 @@ claude mcp add --transport http latex http://127.0.0.1:9876/mcp
 It is localhost-only and unauthenticated, and `write_file` overwrites without
 asking. Commit before letting an agent loose, and the review is a `git diff`
 rather than an act of faith.
+
+### Extend it with plugins
+
+Drop a folder in `~/.latex-editor/plugins/` with a `plugin.json` and its
+snippets join the completion list. A plugin is **data, not code** — you declare
+what it contributes, and nothing is executed:
+
+```json
+{
+  "name": "Physics Snippets",
+  "version": "2.0.0",
+  "type": "snippets",
+  "snippets": [
+    {
+      "prefix": "maxwell",
+      "name": "Maxwell's Equations",
+      "body": "\\begin{align}\n  \\nabla \\cdot \\mathbf{E} &= \\frac{\\rho}{\\varepsilon_0} \\\\\n  ...\n\\end{align}"
+    }
+  ]
+}
+```
+
+Type `maxwell`, accept the suggestion, get the equations. The completion detail
+names the plugin the snippet came from, so it is clear where a suggestion
+originates.
+
+This is deliberately the un-clever version. A plugin that shipped a JavaScript
+entry point — as an earlier draft of this did — would run in the webview with
+everything the app can reach, including the Tauri IPC that reads your settings
+and writes your files. Declaring snippets gives the useful half with nothing to
+sandbox. The bundled `plugins/sample-snippets/` is a working example; the
+**Plugins** dialog lists what is installed and shows exactly which snippets each
+one adds.
 
 ---
 
@@ -335,8 +415,9 @@ Monaco's own widgets.
 Stated plainly, because a feature list that hides its gaps is a sales pitch:
 
 - **No editor tabs.** One file open at a time.
-- **Plugins are listed and inspectable, but not executed.** The manager is a
-  viewer; treat it as a preview of an interface.
+- **Plugins contribute snippets only.** Themes, components and tools are valid
+  `type` values but not wired up yet — a plugin declaring one lists but adds
+  nothing.
 - **SyncTeX** is wired end to end in the backend but not bound to a click in the
   PDF pane, so there is no jump-to-source yet.
 - **AI context comes from the open file** — `\label`s in other files of a

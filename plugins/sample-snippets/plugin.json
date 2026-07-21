@@ -1,10 +1,33 @@
 {
   "name": "Physics Snippets",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "snippets",
-  "icon": "⚛",
-  "description": "Common physics LaTeX snippets: Maxwell, Schrödinger, Navier-Stokes",
+  "description": "Common physics equations: Maxwell, Schrodinger, Navier-Stokes, Einstein",
   "author": "LaTeXEditor",
-  "main": "index.js",
-  "activation": "on-demand"
+  "snippets": [
+    {
+      "prefix": "maxwell",
+      "name": "Maxwell's Equations",
+      "description": "Full set of Maxwell's equations in differential form",
+      "body": "\\begin{align}\n  \\nabla \\cdot \\mathbf{E} &= \\frac{\\rho}{\\varepsilon_0} \\\\\n  \\nabla \\cdot \\mathbf{B} &= 0 \\\\\n  \\nabla \\times \\mathbf{E} &= -\\frac{\\partial \\mathbf{B}}{\\partial t} \\\\\n  \\nabla \\times \\mathbf{B} &= \\mu_0 \\mathbf{J} + \\mu_0 \\varepsilon_0 \\frac{\\partial \\mathbf{E}}{\\partial t}\n\\end{align}"
+    },
+    {
+      "prefix": "schrodinger",
+      "name": "SchrÃ¶dinger Equation",
+      "description": "Time-dependent SchrÃ¶dinger equation",
+      "body": "\\begin{equation}\n  i\\hbar \\frac{\\partial}{\\partial t} \\Psi(\\mathbf{r}, t) =\n  \\left[-\\frac{\\hbar^2}{2m} \\nabla^2 + V(\\mathbf{r}, t)\\right]\n  \\Psi(\\mathbf{r}, t)\n\\end{equation}"
+    },
+    {
+      "prefix": "navierstokes",
+      "name": "Navier-Stokes Equation",
+      "description": "Incompressible Navier-Stokes equation",
+      "body": "\\begin{equation}\n  \\rho \\left( \\frac{\\partial \\mathbf{u}}{\\partial t} +\n  \\mathbf{u} \\cdot \\nabla \\mathbf{u} \\right) =\n  -\\nabla p + \\mu \\nabla^2 \\mathbf{u} + \\mathbf{f}\n\\end{equation}"
+    },
+    {
+      "prefix": "einstein",
+      "name": "Einstein Field Equations",
+      "description": "Einstein's field equations of general relativity",
+      "body": "\\begin{equation}\n  R_{\\mu\\nu} - \\frac{1}{2} R g_{\\mu\\nu} + \\Lambda g_{\\mu\\nu} =\n  \\frac{8\\pi G}{c^4} T_{\\mu\\nu}\n\\end{equation}"
+    }
+  ]
 }

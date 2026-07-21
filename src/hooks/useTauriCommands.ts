@@ -4,6 +4,7 @@ import type {
   CompileCommandResult,
   OpenProjectResult,
 } from "../types";
+import type { InstalledPlugin } from "../plugins/types";
 
 export async function openProject(projectPath: string): Promise<OpenProjectResult> {
   return invoke<OpenProjectResult>("open_project", { projectPath });
@@ -88,13 +89,10 @@ export async function getMcpStatus(): Promise<McpStatus> {
   return invoke("get_mcp_status");
 }
 
-export async function listPlugins(): Promise<any[]> {
-  return invoke<any[]>("list_plugins");
+export async function listPlugins(): Promise<InstalledPlugin[]> {
+  return invoke<InstalledPlugin[]>("list_plugins");
 }
 
-export async function readPluginFile(pluginPath: string, fileName: string): Promise<string> {
-  return invoke<string>("read_plugin_file", { pluginPath, fileName });
-}
 
 export interface AiCallRequest {
   provider: string;

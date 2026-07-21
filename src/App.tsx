@@ -6,7 +6,10 @@ import {
   saveSettings,
   ensureSampleProject,
   openTutorial,
+  listPlugins,
 } from "./hooks/useTauriCommands";
+import { setPluginSnippets } from "./components/editor/latex-language";
+import type { PluginSnippet } from "./plugins/types";
 import { openProjectAt } from "./lib/open-project";
 import { useAppStore } from "./stores/useAppStore";
 import { applyTheme } from "./lib/theme";
@@ -42,6 +45,21 @@ function App() {
   useEffect(() => {
     // Outside Tauri (browser dev) every command rejects; fall back to a themed
     // but otherwise empty editor rather than leaving the app unstyled.
+    // Installed plugins contribute snippets to the completion list. Failing to
+    // read them must never stop the editor loading — a broken plugin folder
+    // costs you its snippets, not your app.
+    listPlugins()
+      .then((plugins) =>
+        setPluginSnippets(
+          plugins
+            .filter((p) => p.enabled)
+            .flatMap((p) =>
+              (p.manifest.snippets ?? []).map((s: PluginSnippet) => ({ ...s, source: p.manifest.name }))
+            )
+        )
+      )
+      .catch(() => {});
+
     (async () => {
       const settings = await loadSettings();
       applyPreferences(settings);

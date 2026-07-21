@@ -5,7 +5,32 @@ import type * as Monaco from "monaco-editor";
 // completion provider registered for "latex" never fires.
 export const LATEX_LANGUAGE_ID = "latex";
 
-const SNIPPETS: { label: string; insertText: string; description: string }[] = [
+/** A completion entry contributed by an installed plugin. */
+export interface PluginSnippet {
+  prefix: string;
+  name: string;
+  description: string;
+  body: string;
+  /** Which plugin it came from, shown in the completion detail. */
+  source: string;
+}
+
+/**
+ * Live list, read by the completion provider on every keystroke.
+ *
+ * A module-level array rather than a re-registered provider: Monaco has no
+ * "replace this provider" call, so re-registering on every plugin load would
+ * stack duplicate providers and show every snippet twice.
+ */
+let pluginSnippets: PluginSnippet[] = [];
+
+export function setPluginSnippets(snippets: PluginSnippet[]): void {
+  pluginSnippets = snippets;
+}
+
+/** Built-in completions. `insertText` is Monaco snippet syntax, so `\` escapes
+ *  `$`, `}` and itself — see snippet-escape.check.ts for why that matters. */
+export const SNIPPETS: { label: string; insertText: string; description: string }[] = [
   { label: "begin", insertText: "\\begin{${1:env}}\n\t$0\n\\end{${1:env}}", description: "Begin environment" },
   { label: "frac", insertText: "\\frac{${1:num}}{${2:den}}", description: "Fraction" },
   { label: "sqrt", insertText: "\\sqrt{${1:x}}", description: "Square root" },
@@ -20,8 +45,8 @@ const SNIPPETS: { label: string; insertText: string; description: string }[] = [
   { label: "figure", insertText: "\\begin{figure}[htbp]\n\t\\centering\n\t\\includegraphics[width=${1:0.8\\textwidth}]{${2:path}}\n\t\\caption{${3:caption}}\n\t\\label{${4:fig:label}}\n\\end{figure}", description: "Figure" },
   { label: "table", insertText: "\\begin{table}[htbp]\n\t\\centering\n\t\\caption{${1:caption}}\n\t\\label{${2:tab:label}}\n\t\\begin{tabular}{${3:lcr}}\n\t\t\\toprule\n\t\t${0}\n\t\t\\bottomrule\n\t\\end{tabular}\n\\end{table}", description: "Table" },
   { label: "align", insertText: "\\begin{align}\n\t${0:equation}\n\\end{align}", description: "Aligned equations" },
-  { label: "matrix", insertText: "\\begin{pmatrix}\n\t${1:a} & ${2:b} \\\\\n\t${3:c} & ${4:d}\n\\end{pmatrix}", description: "Matrix" },
-  { label: "cases", insertText: "\\begin{cases}\n\t${1:a} & ${2:\\text{if } x > 0} \\\\\n\t${3:b} & ${4:\\text{otherwise}}\n\\end{cases}", description: "Cases" },
+  { label: "matrix", insertText: "\\begin{pmatrix}\n\t${1:a} & ${2:b} \\\\\\\\\n\t${3:c} & ${4:d}\n\\end{pmatrix}", description: "Matrix" },
+  { label: "cases", insertText: "\\begin{cases}\n\t${1:a} & ${2:\\text{if } x > 0} \\\\\\\\\n\t${3:b} & ${4:\\text{otherwise}}\n\\end{cases}", description: "Cases" },
   { label: "cite", insertText: "\\cite{${1:ref}}", description: "Citation" },
   { label: "ref", insertText: "\\ref{${1:label}}", description: "Reference" },
   { label: "textbf", insertText: "\\textbf{${1:text}}", description: "Bold text" },
@@ -112,18 +137,36 @@ export function registerLatexLanguage(monaco: typeof Monaco): void {
         startColumn: word.startColumn,
         endColumn: word.endColumn,
       };
-      return {
-        suggestions: SNIPPETS.map((s) => ({
-          label: s.label,
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: s.insertText,
-          insertTextRules:
-            monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          documentation: s.description,
-          detail: s.description,
-          range,
-        })),
-      };
+      const builtIn = SNIPPETS.map((s) => ({
+        label: s.label,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: s.insertText,
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        documentation: s.description,
+        detail: s.description,
+        range,
+      }));
+
+      // Plugin snippets are appended, never merged over the built-ins: a
+      // plugin should be able to add `maxwell`, not silently redefine `figure`.
+      //
+      // Deliberately NOT InsertAsSnippet. Monaco's snippet syntax treats `\` as
+      // an escape, so a plugin author writing ordinary LaTeX would find `\\`
+      // silently collapsed to `\` — which turns a valid align body into one
+      // that will not compile. Inserting literally costs plugin snippets their
+      // tab stops and buys correctness for a format that is nothing but
+      // backslashes.
+      const fromPlugins = pluginSnippets.map((s) => ({
+        label: s.prefix,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: s.body,
+        documentation: s.description || s.name,
+        detail: `${s.name} — ${s.source}`,
+        range,
+      }));
+
+      return { suggestions: [...builtIn, ...fromPlugins] };
     },
   });
 }

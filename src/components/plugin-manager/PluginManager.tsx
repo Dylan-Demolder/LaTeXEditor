@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Icon } from "../icons";
-import { listPlugins, readPluginFile } from "../../hooks/useTauriCommands";
+import { listPlugins } from "../../hooks/useTauriCommands";
 import type { InstalledPlugin } from "../../plugins/types";
 
 interface Props {
@@ -10,7 +10,6 @@ interface Props {
 export default function PluginManager({ onClose }: Props) {
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [selected, setSelected] = useState<InstalledPlugin | null>(null);
-  const [pluginSrc, setPluginSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,24 +19,13 @@ export default function PluginManager({ onClose }: Props) {
     });
   }, []);
 
-  const handleSelect = useCallback(async (p: InstalledPlugin) => {
-    setSelected(p);
-    try {
-      const src = await readPluginFile(p.path, p.manifest.main);
-      setPluginSrc(src);
-    } catch {
-      setPluginSrc("// Could not load plugin source");
-    }
-  }, []);
+  const handleSelect = useCallback((p: InstalledPlugin) => setSelected(p), []);
 
   const typeLabels: Record<string, string> = {
-    theme: "Theme",
     snippets: "Snippets",
+    theme: "Theme",
     component: "Component",
-    "compile-hook": "Compile Hook",
-    preview: "Preview",
     tool: "Tool",
-    linter: "Linter",
   };
 
   return (
@@ -72,7 +60,7 @@ export default function PluginManager({ onClose }: Props) {
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-body">{p.manifest.icon}</span>
+                    <Icon name="plug" size={14} className="text-ink-3 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-tiny text-ink">{p.manifest.name}</div>
                       <div className="text-tiny text-ink-3">v{p.manifest.version}</div>
@@ -90,7 +78,7 @@ export default function PluginManager({ onClose }: Props) {
             {selected ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-xl">{selected.manifest.icon}</span>
+                  <Icon name="plug" size={18} className="text-accent shrink-0" />
                   <div>
                     <h3 className="text-body font-medium text-ink">{selected.manifest.name}</h3>
                     <span className="text-tiny text-ink-3">
@@ -113,17 +101,38 @@ export default function PluginManager({ onClose }: Props) {
                     </span>
                   </div>
                   <div className="px-2 py-1 bg-raised rounded">
-                    <span className="text-ink-3">Activation: </span>
-                    <span className="text-ink">{selected.manifest.activation || "always"}</span>
+                    <span className="text-ink-3">Snippets: </span>
+                    <span className="text-ink tabular-nums">
+                      {selected.manifest.snippets?.length ?? 0}
+                    </span>
                   </div>
                 </div>
 
-                {pluginSrc && (
+                {(selected.manifest.snippets?.length ?? 0) > 0 ? (
                   <div>
-                    <div className="text-tiny text-ink-3 mb-1">Plugin Source ({selected.manifest.main}):</div>
-                    <pre className="p-3 bg-raised rounded text-tiny text-ink overflow-x-auto max-h-[30vh] font-mono">
-                      {pluginSrc}
-                    </pre>
+                    <div className="text-tiny text-ink-3 mb-1">
+                      Type any of these in the editor to insert it:
+                    </div>
+                    <div className="rounded border border-edge divide-y divide-edge overflow-hidden">
+                      {selected.manifest.snippets.map((s) => (
+                        <div key={s.prefix} className="px-2.5 py-2 bg-raised">
+                          <div className="flex items-baseline gap-2">
+                            <code className="text-tiny text-accent font-mono">{s.prefix}</code>
+                            <span className="text-tiny text-ink">{s.name}</span>
+                          </div>
+                          {s.description && (
+                            <div className="text-tiny text-ink-3 mt-0.5">{s.description}</div>
+                          )}
+                          <pre className="mt-1.5 p-2 bg-sunken rounded text-tiny text-ink-2 overflow-x-auto font-mono">
+                            {s.body}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-tiny text-ink-3">
+                    This plugin declares nothing the editor can use yet.
                   </div>
                 )}
 
