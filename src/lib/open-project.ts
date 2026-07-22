@@ -20,8 +20,7 @@ export async function openProjectAt(dir: string, fileToOpen?: string): Promise<v
   const path = `${dir}/${fileToOpen}`;
   try {
     const content = await readFile(path);
-    store.setActiveFile(path);
-    store.setActiveFileContent(content);
+    store.openFile(path, content);
   } catch {
     // A missing entry point should still leave the project open and browsable
     // rather than failing the whole operation.

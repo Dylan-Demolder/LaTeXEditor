@@ -23,6 +23,26 @@ export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
   autosaveDelayMs: 1000,
 };
 
+/** One open file. The tab list is the source of truth for what is open. */
+export interface EditorTab {
+  path: string;
+  /** Live buffer, which may differ from disk while edits are pending. */
+  content: string;
+  /** What is currently on disk, so dirtiness is derived rather than guessed. */
+  savedContent: string;
+}
+
+/**
+ * A tab is dirty when its buffer differs from what was last written.
+ *
+ * Comparing to `savedContent` rather than keeping a boolean means typing a
+ * character and deleting it again leaves the tab clean, and a save that fails
+ * cannot leave a tab falsely marked as saved.
+ */
+export function isTabDirty(tab: EditorTab): boolean {
+  return tab.content !== tab.savedContent;
+}
+
 interface AppStore {
   // Mirrors the Monaco selection so panels can act on what the user highlighted
   // instead of falling back to the whole file.
@@ -31,6 +51,13 @@ interface AppStore {
 
   projectPath: string | null;
   files: FileEntry[];
+  /** Every open file, in tab order. */
+  tabs: EditorTab[];
+  /**
+   * The three fields below are derived mirrors of the active tab, kept so the
+   * nine panels that only ever want "the current file" need no changes. Treat
+   * them as read-only: write through openFile / updateTabContent instead.
+   */
   activeFilePath: string | null;
   activeFileContent: string;
   isDirty: boolean;
@@ -60,6 +87,12 @@ interface AppStore {
   setActiveFile: (path: string | null) => void;
   setActiveFileContent: (content: string) => void;
   setIsDirty: (dirty: boolean) => void;
+  /** Open a file in a tab (or focus it if already open) and make it active. */
+  openFile: (path: string, content: string) => void;
+  closeTab: (path: string) => void;
+  closeOtherTabs: (path: string) => void;
+  /** Record that a tab's contents were written to disk. */
+  markTabSaved: (path: string, content: string) => void;
   setPdfPath: (path: string | null) => void;
   setPdfData: (data: Uint8Array | null) => void;
   setCompileErrors: (errors: LaTeXError[]) => void;
@@ -74,11 +107,28 @@ interface AppStore {
   setAutoCompile: (auto: boolean) => void;
 }
 
+/**
+ * Recompute the derived mirrors from the tab list.
+ *
+ * Every action that changes tabs or focus returns this, so `activeFilePath`,
+ * `activeFileContent` and `isDirty` are updated in exactly one place and
+ * cannot drift from the tabs they describe.
+ */
+function mirror(tabs: EditorTab[], activePath: string | null) {
+  const active = tabs.find((t) => t.path === activePath) ?? null;
+  return {
+    activeFilePath: active ? active.path : activePath,
+    activeFileContent: active ? active.content : "",
+    isDirty: active ? isTabDirty(active) : false,
+  };
+}
+
 export const useAppStore = create<AppStore>((set) => ({
   selection: null,
   setSelection: (selection) => set({ selection }),
   projectPath: null,
   files: [],
+  tabs: [],
   activeFilePath: null,
   activeFileContent: "",
   isDirty: false,
@@ -102,9 +152,76 @@ export const useAppStore = create<AppStore>((set) => ({
   // Dropping the selection here matters: a range captured in one file must
   // never be applied into another.
   setActiveFile: (path) =>
-    set({ activeFilePath: path, isDirty: false, selection: null }),
-  setActiveFileContent: (content) => set({ activeFileContent: content }),
-  setIsDirty: (dirty) => set({ isDirty: dirty }),
+    set((state) => {
+      if (path === null) return { ...mirror(state.tabs, null), selection: null };
+      // Switching to a file that is not open yet leaves the tab list alone;
+      // openFile is what adds it. This keeps setActiveFile usable by callers
+      // that already hold the content.
+      return { ...mirror(state.tabs, path), selection: null };
+    }),
+
+  // Kept for the callers that set content directly after reading a file. It
+  // writes through to the tab so the buffer and the mirror cannot disagree.
+  setActiveFileContent: (content) =>
+    set((state) => {
+      if (!state.activeFilePath) return { activeFileContent: content };
+      const tabs = state.tabs.map((t) =>
+        t.path === state.activeFilePath ? { ...t, content } : t
+      );
+      return { tabs, ...mirror(tabs, state.activeFilePath) };
+    }),
+
+  // Dirtiness is derived from savedContent, so this only exists for the two
+  // callers that flip it directly; it marks the tab saved rather than lying.
+  setIsDirty: (dirty) =>
+    set((state) => {
+      if (dirty || !state.activeFilePath) return { isDirty: dirty };
+      const tabs = state.tabs.map((t) =>
+        t.path === state.activeFilePath ? { ...t, savedContent: t.content } : t
+      );
+      return { tabs, ...mirror(tabs, state.activeFilePath) };
+    }),
+
+  openFile: (path, content) =>
+    set((state) => {
+      const existing = state.tabs.find((t) => t.path === path);
+      // Re-opening a file that is already open must not discard unsaved edits,
+      // so an existing tab is focused rather than replaced.
+      const tabs = existing
+        ? state.tabs
+        : [...state.tabs, { path, content, savedContent: content }];
+      return { tabs, ...mirror(tabs, path), selection: null };
+    }),
+
+  closeTab: (path) =>
+    set((state) => {
+      const index = state.tabs.findIndex((t) => t.path === path);
+      if (index === -1) return {};
+      const tabs = state.tabs.filter((t) => t.path !== path);
+
+      // Closing the active tab moves to its right-hand neighbour, or its
+      // left-hand one if it was last — the behaviour every editor has, and the
+      // one that keeps you near where you were.
+      let nextPath = state.activeFilePath;
+      if (state.activeFilePath === path) {
+        nextPath = tabs[index]?.path ?? tabs[index - 1]?.path ?? null;
+      }
+      return { tabs, ...mirror(tabs, nextPath), selection: null };
+    }),
+
+  closeOtherTabs: (path) =>
+    set((state) => {
+      const tabs = state.tabs.filter((t) => t.path === path);
+      return { tabs, ...mirror(tabs, tabs.length ? path : null), selection: null };
+    }),
+
+  markTabSaved: (path, content) =>
+    set((state) => {
+      const tabs = state.tabs.map((t) =>
+        t.path === path ? { ...t, savedContent: content } : t
+      );
+      return { tabs, ...mirror(tabs, state.activeFilePath) };
+    }),
   setPdfPath: (path) =>
     set((state) => ({ pdfPath: path, pdfVersion: state.pdfVersion + 1 })),
   setPdfData: (data) => set({ pdfData: data }),

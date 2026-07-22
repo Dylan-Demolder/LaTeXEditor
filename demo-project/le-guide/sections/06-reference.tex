@@ -27,6 +27,9 @@
     \kbd{Shift+Alt+Down}  & Duplicate line \\
     \kbd{Alt+Up} / \kbd{Alt+Down} & Move line \\
     \midrule
+    \kbd{Cmd+W}           & Close the current tab \\
+    \kbd{Cmd+Shift+[} / \kbd{Cmd+Shift+]} & Previous / next tab \\
+    \midrule
     \kbd{Cmd+}\texttt{+} / \kbd{Cmd+}\texttt{-} & Zoom the preview in / out \\
     \kbd{Cmd+0}           & Preview back to 100\% \\
     \bottomrule
@@ -81,10 +84,10 @@ detail rather than magnifying a blurry image.
 \begin{description}[style=nextline, leftmargin=0pt, labelindent=0pt, labelwidth=0pt, font=\normalfont\itshape]
 
   \item[The compiler menu is empty.]
-  No \LaTeX{} distribution was found on your \texttt{PATH}. Install TeX Live,
-  MacTeX or MiKTeX and restart. Verify with \texttt{which pdflatex} in a
-  terminal --- if the shell cannot find it either, the problem is the
-  installation, not the editor.
+  No \LaTeX{} distribution was found. The editor checks your \texttt{PATH} and
+  the usual install locations, so this normally means none is installed rather
+  than that one is hidden. Install TeX Live, MacTeX or MiKTeX and press
+  \ui{Re-check} --- no restart needed.
 
   \item[References show as \texttt{??}, the contents page is empty.]
   Press \ui{Typeset} a second time. See Section~\ref{sec:passes}.
@@ -96,9 +99,9 @@ detail rather than magnifying a blurry image.
   \texttt{latexmk}.
 
   \item[The wrong file is being typeset.]
-  The editor builds the file containing \verb|\documentclass|. If your project
-  has several, the shortest path wins. Keep one root document per project
-  folder.
+  If the file you are editing has its own \verb|\documentclass| it is what
+  gets built. If it is a fragment pulled in by \verb|\input|, the editor finds
+  the document that includes it. Only when neither applies does it guess.
 
   \item[The AI panel says ``whole file'' when you wanted a paragraph.]
   Nothing is selected. Select the text first --- the panel always tells you
@@ -118,13 +121,9 @@ detail rather than magnifying a blurry image.
 Stated plainly, so nothing here is a surprise:
 
 \begin{itemize}[leftmargin=*]
-  \item One file open at a time --- there are no editor tabs.
   \item One compiler pass per press, with the consequences in
         Section~\ref{sec:passes}.
-  \item SyncTeX exists in the backend but is not bound to a click.
-  \item Plugins are listed, not executed.
-  \item AI context collects \verb|\label|s from the open file only; citation
-        keys are gathered across the whole project.
+  \item Plugins contribute snippets only; other kinds are not wired up.
   \item One AI request at a time.
 \end{itemize}
 

@@ -43,8 +43,7 @@ function FileTreeItem({
   depth: number;
   onSelect: (path: string) => void;
 }) {
-  const { expandedDirs, toggleDir, activeFilePath, setActiveFile, setActiveFileContent } =
-    useAppStore();
+  const { expandedDirs, toggleDir, activeFilePath } = useAppStore();
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(entry.name);
   const [error, setError] = useState<string | null>(null);
@@ -70,8 +69,15 @@ function FileTreeItem({
     const newPath = `${parentOf(entry.path)}/${trimmed}`;
     try {
       await renameFile(entry.path, newPath);
-      // The open file moved with it; keep the editor pointed at the new path.
-      if (activeFilePath === entry.path) setActiveFile(newPath);
+      // A renamed file keeps its tab, at the new path. Reopening under the new
+      // name and closing the old one also disposes the stale Monaco model,
+      // which is keyed by path.
+      const store = useAppStore.getState();
+      const open = store.tabs.find((t) => t.path === entry.path);
+      if (open) {
+        store.openFile(newPath, open.content);
+        store.closeTab(entry.path);
+      }
       await refreshFiles();
     } catch (e) {
       setNewName(entry.name);
@@ -85,10 +91,8 @@ function FileTreeItem({
     if (!window.confirm(`Delete ${what}? This cannot be undone.`)) return;
     try {
       await deleteFile(entry.path);
-      if (activeFilePath === entry.path) {
-        setActiveFile(null);
-        setActiveFileContent("");
-      }
+      // A deleted file must not leave a tab that writes it back on close.
+      useAppStore.getState().closeTab(entry.path);
       await refreshFiles();
     } catch (e) {
       setError(String(e));
@@ -190,15 +194,12 @@ function FileTreeItem({
 }
 
 export default function FileTree() {
-  const { files, projectPath, activeFilePath, setActiveFile, setActiveFileContent } =
-    useAppStore();
+  const { files, projectPath, activeFilePath, openFile } = useAppStore();
   const [error, setError] = useState<string | null>(null);
 
   const handleSelect = async (path: string) => {
     try {
-      const content = await readFile(path);
-      setActiveFile(path);
-      setActiveFileContent(content);
+      openFile(path, await readFile(path));
     } catch (e) {
       setError(`Failed to read file: ${e}`);
     }
@@ -215,8 +216,7 @@ export default function FileTree() {
     try {
       await writeFile(path, "");
       await refreshFiles();
-      setActiveFile(path);
-      setActiveFileContent("");
+      openFile(path, "");
     } catch (e) {
       setError(`Failed to create file: ${e}`);
     }

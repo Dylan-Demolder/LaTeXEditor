@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function TemplateGallery({ onClose }: Props) {
-  const { projectPath, setFiles, setActiveFile, setActiveFileContent } =
+  const { projectPath, setFiles, openFile } =
     useAppStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<LaTeXTemplate | null>(
@@ -49,8 +49,8 @@ export default function TemplateGallery({ onClose }: Props) {
       }
 
       const mainFilePath = `${basePath}/${selectedTemplate.mainFile}`;
-      setActiveFile(mainFilePath);
-      setActiveFileContent(
+      openFile(
+        mainFilePath,
         selectedTemplate.files.find((f) => f.path === selectedTemplate.mainFile)
           ?.content || ""
       );
@@ -64,7 +64,7 @@ export default function TemplateGallery({ onClose }: Props) {
     } finally {
       setIsCreating(false);
     }
-  }, [selectedTemplate, projectPath, onClose, setFiles, setActiveFile, setActiveFileContent]);
+  }, [selectedTemplate, projectPath, onClose, setFiles, openFile]);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

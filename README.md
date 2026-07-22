@@ -454,7 +454,6 @@ Monaco's own widgets.
 
 Stated plainly, because a feature list that hides its gaps is a sales pitch:
 
-- **No editor tabs.** One file open at a time.
 - **Plugins contribute snippets only.** Themes, components and tools are valid
   `type` values but not wired up yet — a plugin declaring one lists but adds
   nothing.

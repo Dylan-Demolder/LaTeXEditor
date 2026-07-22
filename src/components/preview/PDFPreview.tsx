@@ -43,8 +43,7 @@ export default function PDFPreview() {
     isCompiling,
     compileErrors,
     projectPath,
-    setActiveFile,
-    setActiveFileContent,
+    openFile,
   } = useAppStore();
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -225,8 +224,7 @@ export default function PDFPreview() {
           setTimeout(() => setSyncNote(null), 2500);
           return;
         }
-        setActiveFile(result.file);
-        setActiveFileContent(await readFile(result.file));
+        openFile(result.file, await readFile(result.file));
         // Let the editor swap models before seeking, as the Issues panel does.
         setTimeout(() => goToLine(result.line ?? 1), 100);
       } catch {
@@ -234,7 +232,7 @@ export default function PDFPreview() {
         setTimeout(() => setSyncNote(null), 2500);
       }
     },
-    [pdfPath, projectPath, scale, pageNum, setActiveFile, setActiveFileContent]
+    [pdfPath, projectPath, scale, pageNum, openFile]
   );
 
   /** Any manual zoom leaves fit mode — otherwise the next resize undoes it. */

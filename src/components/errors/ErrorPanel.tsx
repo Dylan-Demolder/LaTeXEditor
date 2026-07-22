@@ -16,8 +16,7 @@ export default function ErrorPanel({ onHide }: Props) {
     compileMessage,
     projectPath,
     activeFilePath,
-    setActiveFile,
-    setActiveFileContent,
+    openFile,
   } = useAppStore();
 
   const handleJumpToError = async (err: LaTeXError) => {
@@ -36,8 +35,7 @@ export default function ErrorPanel({ onHide }: Props) {
 
     try {
       const content = await readFile(path);
-      setActiveFile(path);
-      setActiveFileContent(content);
+      openFile(path, content);
 
       // Let the editor swap models to the newly-opened file before seeking.
       setTimeout(() => goToLine(err.line), 100);
