@@ -454,8 +454,6 @@ Stated plainly, because a feature list that hides its gaps is a sales pitch:
   nothing.
 - **SyncTeX** is wired end to end in the backend but not bound to a click in the
   PDF pane, so there is no jump-to-source yet.
-- **AI context comes from the open file** — `\label`s in other files of a
-  multi-file project are not collected yet (`.bib` keys are, across the project).
 - **One AI request at a time.** Cancel targets the single in-flight call.
 - **No prebuilt binaries, no code signing, no CI.**
 

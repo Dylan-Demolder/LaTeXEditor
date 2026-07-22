@@ -29,6 +29,34 @@ export interface RunEnvironment {
   compileErrors: LaTeXError[];
 }
 
+/**
+ * Cap on how many .tex files are read to gather labels.
+ *
+ * ponytail: a thesis has tens of section files, not hundreds. The cap stops a
+ * pathological project turning one AI request into a thousand file reads; if
+ * it is ever hit the result is fewer labels, never a failure.
+ */
+const MAX_SCANNED_FILES = 50;
+
+/** Every file with the given extension, depth-first, capped. */
+function collectFiles(entries: FileEntry[], extension: string, limit: number): string[] {
+  const found: string[] = [];
+  const walk = (list: FileEntry[]) => {
+    for (const entry of list) {
+      if (found.length >= limit) return;
+      // build/ holds generated copies of nothing useful; skip it so a rebuilt
+      // project does not spend its budget re-reading its own output.
+      if (entry.is_dir) {
+        if (entry.name !== "build" && !entry.name.startsWith(".")) walk(entry.children ?? []);
+      } else if (entry.extension === extension) {
+        found.push(entry.path);
+      }
+    }
+  };
+  walk(entries);
+  return found;
+}
+
 export async function buildContextSections(
   skill: AISkill,
   env: RunEnvironment
@@ -49,22 +77,29 @@ export async function buildContextSections(
     });
   }
   if (kinds.includes("labels")) {
-    // ponytail: labels come from the open file only. Cross-file \ref targets
-    // would mean reading every .tex on each run; revisit if it bites.
-    sections.push({ kind: "labels", title: "Labels", lines: extractLabels(env.activeFileContent) });
+    // Labels come from every .tex in the project, not just the open file. In a
+    // multi-file document the \label you want to \ref is almost always in a
+    // different section file, so the open-file-only version suggested keys the
+    // model could not see and let it invent ones that did not exist.
+    //
+    // The open file is read from the editor buffer rather than disk, so
+    // labels you have just typed and not yet saved are included.
+    const labels = new Set(extractLabels(env.activeFileContent));
+
+    for (const path of collectFiles(env.files, "tex", MAX_SCANNED_FILES)) {
+      if (path === env.activeFilePath) continue; // already have it, unsaved
+      try {
+        extractLabels(await readFile(path)).forEach((l) => labels.add(l));
+      } catch {
+        // An unreadable file costs its labels, not the whole request.
+      }
+    }
+
+    sections.push({ kind: "labels", title: "Labels", lines: [...labels] });
   }
   if (kinds.includes("bib")) {
-    const bibPaths: string[] = [];
-    const walk = (entries: FileEntry[]) => {
-      for (const entry of entries) {
-        if (entry.is_dir) walk(entry.children ?? []);
-        else if (entry.extension === "bib") bibPaths.push(entry.path);
-      }
-    };
-    walk(env.files);
-
     const keys: string[] = [];
-    for (const path of bibPaths.slice(0, 5)) {
+    for (const path of collectFiles(env.files, "bib", 5)) {
       try {
         keys.push(...extractCiteKeys(await readFile(path)));
       } catch {
