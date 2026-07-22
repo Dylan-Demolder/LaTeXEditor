@@ -128,6 +128,13 @@ extension point.
 
 \subsection{SyncTeX}
 
-The backend can map a source line to a PDF page and back. It is not yet wired
-to a click in the preview, so there is no jump-to-source today. The groundwork
-is done; the gesture is not.
+Click any line in the preview and the editor jumps to the source that produced
+it --- the right file and the right line. In a document assembled from several
+\verb|\input| files that is rarely the file you happen to have open, which is
+what makes the feature worth having.
+
+This works because \LaTeX{} is asked to record the mapping as it typesets
+(\texttt{-synctex=1}), writing a \texttt{.synctex.gz} beside the PDF. If a
+click reports that it cannot find a source position, the usual cause is a PDF
+built before that was switched on: press \ui{Typeset} once more and the
+mapping will be there.

@@ -134,6 +134,12 @@ pointing at it.
 **Fit width** and **Fit page** are modes, not one-off calculations: drag the
 splitter and the page re-fits.
 
+**Click any line in the PDF and the editor goes there** — the right file and
+the right line, which in a multi-file document are rarely the file you have
+open. This is SyncTeX, and it works because the compiler now asks for the data
+(`-synctex=1`) and the parser reads the `Input:` table that maps each record to
+the file it came from.
+
 ### Fifteen skills, several of them for reports
 
 Beyond the paper-shaped ones (abstracts, equations, bibliographies): **Executive
@@ -452,8 +458,6 @@ Stated plainly, because a feature list that hides its gaps is a sales pitch:
 - **Plugins contribute snippets only.** Themes, components and tools are valid
   `type` values but not wired up yet — a plugin declaring one lists but adds
   nothing.
-- **SyncTeX** is wired end to end in the backend but not bound to a click in the
-  PDF pane, so there is no jump-to-source yet.
 - **One AI request at a time.** Cancel targets the single in-flight call.
 - **No prebuilt binaries, no code signing, no CI.**
 

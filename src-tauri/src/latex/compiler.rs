@@ -176,6 +176,10 @@ pub async fn compile(
 
     let output = Command::new(&compiler)
         .arg("-interaction=nonstopmode")
+        // Emit the .synctex.gz that maps source lines to PDF coordinates.
+        // Without it no synctex file is written at all, so every lookup
+        // returned empty and click-to-source could never have worked.
+        .arg("-synctex=1")
         .arg("-output-directory")
         .arg(output_dir)
         .arg(tex_filename)

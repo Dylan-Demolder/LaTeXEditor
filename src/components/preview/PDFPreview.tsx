@@ -3,8 +3,9 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { RenderParameters } from "pdfjs-dist/types/src/display/api";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useAppStore } from "../../stores/useAppStore";
-import { readPdf, loadSettings } from "../../hooks/useTauriCommands";
+import { readPdf, loadSettings, synctexInverse, readFile } from "../../hooks/useTauriCommands";
 import { Icon } from "../icons";
+import { goToLine } from "../editor/editor-bridge";
 
 // Bundled worker, not a CDN one: the app must work offline, and pdf.js refuses
 // to run a worker whose version differs from the library's.
@@ -35,8 +36,17 @@ const PAGE_MARGIN = 48;
 type FitMode = "none" | "width" | "page";
 
 export default function PDFPreview() {
-  const { pdfPath, pdfVersion, compileMessage, isCompiling, compileErrors } =
-    useAppStore();
+  const {
+    pdfPath,
+    pdfVersion,
+    compileMessage,
+    isCompiling,
+    compileErrors,
+    projectPath,
+    setActiveFile,
+    setActiveFileContent,
+  } = useAppStore();
+  const [syncNote, setSyncNote] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -186,6 +196,46 @@ export default function PDFPreview() {
     observer.observe(container);
     return () => observer.disconnect();
   }, [fitMode, applyFit]);
+
+  /**
+   * Click-to-source. Convert the click from canvas pixels to PDF points and
+   * ask SyncTeX which line produced that spot.
+   *
+   * The canvas backing store is `scale * dpr` times the PDF's natural size, so
+   * dividing the offset within the canvas by `scale` recovers points. Using
+   * getBoundingClientRect keeps this in CSS pixels and independent of dpr.
+   */
+  const handlePageClick = useCallback(
+    async (e: React.MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas || !pdfPath || !projectPath) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const xPt = (e.clientX - rect.left) / scale;
+      const yPt = (e.clientY - rect.top) / scale;
+
+      // The synctex file sits beside the PDF and is named for the root
+      // document, which is what pdfPath points at.
+      const outDir = pdfPath.slice(0, pdfPath.lastIndexOf("/"));
+
+      try {
+        const result = await synctexInverse(pdfPath, outDir, pageNum, xPt, yPt);
+        if (!result?.successful || !result.file) {
+          setSyncNote("No source position for that point.");
+          setTimeout(() => setSyncNote(null), 2500);
+          return;
+        }
+        setActiveFile(result.file);
+        setActiveFileContent(await readFile(result.file));
+        // Let the editor swap models before seeking, as the Issues panel does.
+        setTimeout(() => goToLine(result.line ?? 1), 100);
+      } catch {
+        setSyncNote("Typeset again to enable click-to-source.");
+        setTimeout(() => setSyncNote(null), 2500);
+      }
+    },
+    [pdfPath, projectPath, scale, pageNum, setActiveFile, setActiveFileContent]
+  );
 
   /** Any manual zoom leaves fit mode — otherwise the next resize undoes it. */
   const zoomTo = useCallback((next: number) => {
@@ -370,7 +420,7 @@ export default function PDFPreview() {
         onWheel={handleWheel}
         onMouseEnter={() => (hovering.current = true)}
         onMouseLeave={() => (hovering.current = false)}
-        className="flex-1 overflow-auto flex justify-center p-6"
+        className="flex-1 overflow-auto flex justify-center p-6 relative"
       >
         {loading && (
           <div className="flex items-center justify-center h-full text-ink-3 text-tiny">
@@ -405,11 +455,20 @@ export default function PDFPreview() {
           </div>
         )}
         {pdfDoc && (
+          <>
+          {syncNote && (
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-2.5 py-1 rounded-md bg-raised border border-edge text-tiny text-ink-2 shadow-lg">
+              {syncNote}
+            </div>
+          )}
           <canvas
             ref={canvasRef}
-            className="self-start rounded-sm"
+            onClick={handlePageClick}
+            title="Click to jump to the source line"
+            className="self-start rounded-sm cursor-text"
             style={{ backgroundColor: "white", boxShadow: "var(--pdf-page-shadow)" }}
           />
+          </>
         )}
       </div>
     </div>
